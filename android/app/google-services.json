@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "738688838159",
+    "project_id": "katte-dev-jp",
+    "storage_bucket": "katte-dev-jp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:738688838159:android:67644042e4ad8fc62e917a",
+        "android_client_info": {
+          "package_name": "jp.katte.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "738688838159-8idspi7cume5enb82d256qcvent4ngod.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAt8JgIxgGpxtI7Mb2B9mnB0szMKFNNtvY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "738688838159-8idspi7cume5enb82d256qcvent4ngod.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "738688838159-jtp62uq43npe5na06ev7j33j27rskg3j.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "jp.katte.app"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

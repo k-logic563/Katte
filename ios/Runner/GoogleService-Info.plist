@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>738688838159-jtp62uq43npe5na06ev7j33j27rskg3j.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.738688838159-jtp62uq43npe5na06ev7j33j27rskg3j</string>
+	<key>API_KEY</key>
+	<string>AIzaSyDmzLExPfm-Qxo2XbkpUPb6XdA_JKQIeg0</string>
+	<key>GCM_SENDER_ID</key>
+	<string>738688838159</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>jp.katte.app</string>
+	<key>PROJECT_ID</key>
+	<string>katte-dev-jp</string>
+	<key>STORAGE_BUCKET</key>
+	<string>katte-dev-jp.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:738688838159:ios:53fe392056e7dd252e917a</string>
+</dict>
+</plist>
