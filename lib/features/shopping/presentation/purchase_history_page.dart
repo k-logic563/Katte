@@ -1,0 +1,132 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../models/shopping_item.dart';
+import '../shopping_providers.dart';
+import '../shopping_repository.dart';
+
+class PurchaseHistoryPage extends ConsumerWidget {
+  const PurchaseHistoryPage({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final items = ref.watch(purchasedShoppingItemsProvider);
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('購入履歴')),
+      body: items.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (_, _) => _HistoryLoadError(
+          onRetry: () => ref.invalidate(purchasedShoppingItemsProvider),
+        ),
+        data: (items) => items.isEmpty
+            ? const Center(child: Text('購入履歴はまだありません'))
+            : ListView.separated(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+                itemCount: items.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, index) =>
+                    _HistoryItemTile(item: items[index]),
+              ),
+      ),
+    );
+  }
+}
+
+class _HistoryItemTile extends ConsumerWidget {
+  const _HistoryItemTile({required this.item});
+
+  final ShoppingItem item;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final quantity = item.quantity == 1 ? '' : ' ×${item.quantity}';
+    final purchaser = item.purchasedByName ?? fallbackUserDisplayName;
+    final isUpdating = ref.watch(shoppingControllerProvider).isLoading;
+
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(vertical: 4),
+      leading: const Icon(Icons.check_circle_outline),
+      title: Text(
+        '${item.name}$quantity',
+        style: Theme.of(context).textTheme.titleMedium,
+      ),
+      subtitle: Text(
+        '$purchaser ・ ${_formatPurchasedAt(item.purchasedAt)}',
+        style: Theme.of(context).textTheme.bodySmall
+            ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+      ),
+      trailing: PopupMenuButton<_HistoryAction>(
+        key: Key('history-menu-${item.id}'),
+        tooltip: '商品メニュー',
+        enabled: !isUpdating,
+        onSelected: (action) async {
+          if (action != _HistoryAction.restoreToPending) {
+            return;
+          }
+          final succeeded = await ref
+              .read(shoppingControllerProvider.notifier)
+              .setPurchased(itemId: item.id, isPurchased: false);
+          if (!context.mounted) {
+            return;
+          }
+          final messenger = ScaffoldMessenger.of(context);
+          messenger.hideCurrentSnackBar();
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(
+                succeeded ? '${item.name}を買い物リストに戻しました' : '未購入に戻せませんでした',
+              ),
+            ),
+          );
+        },
+        itemBuilder: (context) => const [
+          PopupMenuItem(
+            key: Key('restore-history-item'),
+            value: _HistoryAction.restoreToPending,
+            child: Text('未購入に戻す'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+enum _HistoryAction { restoreToPending }
+
+class _HistoryLoadError extends StatelessWidget {
+  const _HistoryLoadError({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('購入履歴を読み込めませんでした。'),
+          const SizedBox(height: 16),
+          OutlinedButton(onPressed: onRetry, child: const Text('再試行')),
+        ],
+      ),
+    );
+  }
+}
+
+String _formatPurchasedAt(DateTime? purchasedAt) {
+  if (purchasedAt == null) {
+    return '購入日時不明';
+  }
+
+  final local = purchasedAt.toLocal();
+  final now = DateTime.now();
+  final isToday =
+      local.year == now.year &&
+      local.month == now.month &&
+      local.day == now.day;
+  final date = isToday ? '今日' : '${local.month}/${local.day}';
+  final hour = local.hour.toString().padLeft(2, '0');
+  final minute = local.minute.toString().padLeft(2, '0');
+  return '$date $hour:$minute';
+}

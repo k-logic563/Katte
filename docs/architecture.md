@@ -47,13 +47,21 @@ Apple Sign InはPhase 2.5またはリリース前対応として別途実装す�
 
 主要データストア。
 
+Phase 4ではユーザーが作成または招待コードで参加したGroupを利用し、
+`groups/{currentGroupId}/items` をsnapshot購読する。
+商品の追加・購入・UndoはRiverpodの現在Groupを通じてFirestoreへ反映し、
+同じGroupの全Memberへリアルタイム同期する。
+
 ### Firebase Cloud Messaging
 
-Push通知。
+Phase 5ではログイン後に通知権限を要求し、商品追加Push通知を受信する。
+Foregroundでは `flutter_local_notifications`、Background / Terminatedでは
+Firebase Cloud MessagingのOS通知を利用する。
 
 ### Cloud Functions for Firebase
 
-Firestoreイベントを起点とした通知送信など。
+`groups/{groupId}/items/{itemId}` のonCreateを起点に、同じGroupの
+追加者以外のMemberへFirebase Admin SDKから通知する。Regionは `us-central1` とする。
 
 ### Firebase Crashlytics
 
@@ -100,9 +108,21 @@ Flutter App
 users/{userId}
 
 displayName
+email
 photoUrl
 createdAt
 updatedAt
+```
+
+現在の所属Groupを安全かつ単純に取得するため、Member documentと同時に
+ユーザー配下へ参照を作成する。
+
+```text
+users/{userId}/groups/{groupId}
+
+groupId
+role
+joinedAt
 ```
 
 FCM tokenは複数端末対応を考慮し、
@@ -113,8 +133,15 @@ users/{userId}/devices/{deviceId}
 
 fcmToken
 platform
+notificationEnabled
+createdAt
 updatedAt
 ```
+
+`deviceId` はアプリがRandom.secureで生成した128bit相当の値を
+SharedPreferencesへ保存する。IMEI等の端末識別子は使用しない。
+FCM Token refresh時は同じDevice documentを更新し、Logout時はDocument削除と
+FCM Token削除を行ってからFirebase Authを終了する。
 
 ---
 
@@ -125,6 +152,7 @@ groups/{groupId}
 
 name
 createdBy
+inviteCode
 createdAt
 updatedAt
 ```
@@ -138,7 +166,9 @@ groups/{groupId}/members/{userId}
 
 userId
 displayName
+photoUrl
 role
+joinedWithInviteCode
 joinedAt
 ```
 
@@ -150,6 +180,20 @@ member
 ```
 
 MVPではroleによる複雑な制御は行わない。
+
+`joinedWithInviteCode` はClientからの参加作成をSecurity Rulesで検証するために保持する。
+
+## group invites
+
+```text
+groupInvites/{inviteCode}
+
+groupId
+createdAt
+```
+
+招待コードをDocument IDとして直接getする。Collection一覧は許可せず、
+Group情報を招待検索のために公開しない。
 
 ---
 
@@ -182,30 +226,13 @@ pending
 purchased
 ```
 
----
+Phase 3実装では `quantity` を数値（未入力は `1`）、`note` を文字列（未入力は空文字）に統一する。
+`createdAt`、`purchasedAt`、`updatedAt` にはFirestoreのserver timestampを使用する。
+Shopping画面は `status == pending`、購入履歴画面は `status == purchased` のDocumentを購読する。
+購入操作とUndoは同じDocumentのstatusと購入者・購入日時フィールドを更新し、Document自体は削除しない。
 
-## shopping sessions
-
-```text
-groups/{groupId}/shoppingSessions/{sessionId}
-
-startedBy
-startedByName
-startedAt
-
-endedAt
-status
-```
-
-status:
-
-```text
-active
-completed
-```
-
-原則として同一グループで同時に複数セッションを開始できる設計にしておき、
-UI上の扱いは後から調整する。
+Shopping / Purchase Historyのqueryは現在選択中Group IDを必ず利用する。
+Groupを切り替えるとRiverpodのStreamProviderも新しいGroupのqueryへ切り替わる。
 
 ---
 
@@ -224,6 +251,20 @@ FirebaseFirestore.instance
     .orderBy('createdAt', descending: true)
     .snapshots();
 ```
+
+購入履歴は次のqueryを利用する。
+
+```dart
+FirebaseFirestore.instance
+    .collection('groups')
+    .doc(groupId)
+    .collection('items')
+    .where('status', isEqualTo: 'purchased')
+    .orderBy('purchasedAt', descending: true)
+    .snapshots();
+```
+
+`status + createdAt` と `status + purchasedAt` の複合Indexをリポジトリで管理する。
 
 Riverpodでは StreamProvider と組み合わせる。
 
@@ -260,6 +301,10 @@ Push本文例：
 由美が「牛乳」を追加しました
 ```
 
+payloadには `type: shopping_item_created`、`groupId`、`itemId` のみを付与する。
+通知タップは特定ItemへDeep LinkせずShoppingを開く。
+Tokenが恒久的に無効とFCMから明示された場合だけ対応するDevice documentを削除する。
+
 ---
 
 # 7. Security Rules
@@ -285,6 +330,17 @@ isGroupMember(groupId)
 
 クライアントから `createdBy` 等を自由に偽装できないよう、
 Security Rules と Cloud Functions の責務を分ける。
+
+Phase 5のRulesでは次を適用する。
+
+- User documentとその所属Group参照は本人のみアクセス可能
+- Group / Member / ItemはGroup Memberのみread可能
+- Itemの作成者・購入者UIDを認証UIDと照合
+- 招待コードは認証済みユーザーによるDocument単体getのみ許可
+- Member作成は自分自身かつ有効な招待コードとGroup IDが一致する場合のみ許可
+- Group作成時のGroup / owner Member / User所属参照 / InviteはTransactionで一括作成
+- `users/{uid}/devices` は本人のみread / write可能
+- Cloud FunctionsはAdmin SDKを利用し、Clientへ送信用秘密情報を含めない
 
 ---
 

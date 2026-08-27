@@ -1,88 +1,162 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../auth/application/auth_providers.dart';
+import '../auth/application/auth_service.dart';
+import '../groups/group_providers.dart';
 import 'models/shopping_item.dart';
+import 'shopping_repository.dart';
 
-final shoppingItemsProvider =
-    NotifierProvider<ShoppingItemsNotifier, List<ShoppingItem>>(
-      ShoppingItemsNotifier.new,
-    );
+final shoppingRepositoryProvider = Provider<ShoppingRepository>((ref) {
+  return FirestoreShoppingRepository();
+});
 
-class ShoppingItemsNotifier extends Notifier<List<ShoppingItem>> {
-  @override
-  List<ShoppingItem> build() {
-    final now = DateTime.now();
-    return [
-      ShoppingItem(
-        id: 'milk',
-        name: '牛乳',
-        quantity: null,
-        note: null,
-        createdBy: '由美',
-        createdAt: now.subtract(const Duration(minutes: 2)),
-        isPurchased: false,
-        purchasedBy: null,
-      ),
-      ShoppingItem(
-        id: 'eggs',
-        name: '卵',
-        quantity: 2,
-        note: null,
-        createdBy: '康平',
-        createdAt: now.subtract(const Duration(minutes: 10)),
-        isPurchased: false,
-        purchasedBy: null,
-      ),
-      ShoppingItem(
-        id: 'tissues',
-        name: 'ティッシュ',
-        quantity: null,
-        note: null,
-        createdBy: '由美',
-        createdAt: now.subtract(const Duration(minutes: 20)),
-        isPurchased: false,
-        purchasedBy: null,
-      ),
-    ];
+final pendingShoppingItemsProvider = StreamProvider<List<ShoppingItem>>((
+  ref,
+) async* {
+  final group = ref.watch(currentGroupProvider);
+  if (ref.watch(authStateProvider).value == null || group == null) {
+    yield const [];
+    return;
   }
 
-  void addItem({
+  try {
+    yield* ref.watch(shoppingRepositoryProvider).watchPendingItems(group.id);
+  } on Object catch (error, stackTrace) {
+    _logLoadError('Pending shopping items', error, stackTrace);
+    Error.throwWithStackTrace(_safeLoadError(error), stackTrace);
+  }
+}, retry: (_, _) => null);
+
+final purchasedShoppingItemsProvider = StreamProvider<List<ShoppingItem>>((
+  ref,
+) async* {
+  final group = ref.watch(currentGroupProvider);
+  if (ref.watch(authStateProvider).value == null || group == null) {
+    yield const [];
+    return;
+  }
+
+  try {
+    yield* ref.watch(shoppingRepositoryProvider).watchPurchasedItems(group.id);
+  } on Object catch (error, stackTrace) {
+    _logLoadError('Purchased shopping items', error, stackTrace);
+    Error.throwWithStackTrace(_safeLoadError(error), stackTrace);
+  }
+}, retry: (_, _) => null);
+
+void _logLoadError(String source, Object error, StackTrace stackTrace) {
+  debugPrint('$source load failed: $error\n$stackTrace');
+}
+
+class ShoppingLoadException implements Exception {
+  const ShoppingLoadException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+ShoppingLoadException _safeLoadError(Object error) {
+  if (error is FirebaseException && error.code == 'permission-denied') {
+    return const ShoppingLoadException('Firestoreへのアクセスが拒否されました。');
+  }
+  return const ShoppingLoadException('買い物リストを読み込めませんでした。');
+}
+
+final shoppingControllerProvider =
+    NotifierProvider<ShoppingController, AsyncValue<void>>(
+      ShoppingController.new,
+    );
+
+class ShoppingController extends Notifier<AsyncValue<void>> {
+  @override
+  AsyncValue<void> build() => const AsyncData(null);
+
+  Future<bool> addItem({
     required String name,
-    required int? quantity,
-    required String? note,
+    required int quantity,
+    required String note,
   }) {
-    state = [
-      ShoppingItem(
-        id: DateTime.now().microsecondsSinceEpoch.toString(),
+    return _run(
+      (repository, user) => repository.addItem(
+        groupId: _currentGroupId(),
+        user: user,
         name: name,
         quantity: quantity,
         note: note,
-        createdBy: '康平',
-        createdAt: DateTime.now(),
-        isPurchased: false,
-        purchasedBy: null,
       ),
-      ...state,
-    ];
+    );
   }
 
-  void togglePurchased(String id) {
-    state = [
-      for (final item in state)
-        if (item.id == id)
-          item.withPurchaseStatus(isPurchased: !item.isPurchased)
-        else
-          item,
-    ];
+  Future<bool> setPurchased({
+    required String itemId,
+    required bool isPurchased,
+  }) {
+    return _run(
+      (repository, user) => repository.setPurchased(
+        groupId: _currentGroupId(),
+        user: user,
+        itemId: itemId,
+        isPurchased: isPurchased,
+      ),
+    );
+  }
+
+  Future<bool> deleteItem(String itemId) {
+    return _run(
+      (repository, _) =>
+          repository.deleteItem(groupId: _currentGroupId(), itemId: itemId),
+    );
+  }
+
+  String _currentGroupId() {
+    final group = ref.read(currentGroupProvider);
+    if (group == null) {
+      throw const ShoppingOperationException('グループを確認できませんでした。');
+    }
+    return group.id;
+  }
+
+  Future<bool> _run(
+    Future<void> Function(ShoppingRepository repository, AuthUser user) action,
+  ) async {
+    final user = ref.read(authStateProvider).value;
+    if (user == null) {
+      state = AsyncError(
+        const ShoppingOperationException('ログイン状態を確認できませんでした。'),
+        StackTrace.current,
+      );
+      return false;
+    }
+
+    state = const AsyncLoading();
+    try {
+      await action(ref.read(shoppingRepositoryProvider), user);
+      state = const AsyncData(null);
+      return true;
+    } on Object catch (error, stackTrace) {
+      debugPrint('Shopping operation failed: $error\n$stackTrace');
+      state = AsyncError(_safeOperationError(error), stackTrace);
+      return false;
+    }
   }
 }
 
-final shoppingModeProvider = NotifierProvider<ShoppingModeNotifier, bool>(
-  ShoppingModeNotifier.new,
-);
+class ShoppingOperationException implements Exception {
+  const ShoppingOperationException(this.message);
 
-class ShoppingModeNotifier extends Notifier<bool> {
+  final String message;
+
   @override
-  bool build() => false;
+  String toString() => message;
+}
 
-  void toggle() => state = !state;
+ShoppingOperationException _safeOperationError(Object error) {
+  if (error is FirebaseException && error.code == 'unavailable') {
+    return const ShoppingOperationException('通信状態を確認して、もう一度お試しください。');
+  }
+  return const ShoppingOperationException('更新できませんでした。もう一度お試しください。');
 }

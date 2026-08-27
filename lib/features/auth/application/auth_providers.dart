@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../notifications/application/notification_service_provider.dart';
 import 'auth_service.dart';
 
 final authServiceProvider = Provider<AuthService>((ref) {
@@ -22,7 +23,13 @@ class AuthController extends Notifier<AsyncValue<void>> {
   }
 
   Future<void> signOut() {
-    return _run(ref.read(authServiceProvider).signOut);
+    return _run(() async {
+      final user = ref.read(authStateProvider).value;
+      if (user != null) {
+        await ref.read(notificationServiceProvider).unregisterForUser(user);
+      }
+      await ref.read(authServiceProvider).signOut();
+    });
   }
 
   Future<void> _run(Future<void> Function() action) async {

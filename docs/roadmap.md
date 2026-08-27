@@ -125,6 +125,22 @@ Firestoreへ商品を保存する。
 
 アプリを再起動してもデータが残る。
 
+## Implementation Status
+
+- `cloud_firestore` を導入し、開発用の固定Group配下に商品を保存
+- 初回利用時にTransactionで開発用Groupを存在しない場合のみ作成
+- 空の `items` Collectionは事前作成せず、最初の商品追加時に自動作成
+- Firestore snapshotをRiverpod経由で一覧表示
+- 商品追加、購入済み / 未購入への更新、Repository上の削除操作をFirestore化
+- Shopping画面は未購入商品のみ表示し、購入済み商品は履歴画面へ分離
+- 購入直後のSnackBarから直前の1件をUndo可能
+- 購入履歴の各商品メニューから未購入へ戻す操作を追加
+- pending／purchased query用の複合Indexをリポジトリ管理
+- 認証済みユーザーのみ開発用Group配下へアクセスできるPhase 3用Rulesを追加
+- Firestore読込失敗時のError Stateと再試行導線を追加
+
+Firebase ConsoleとiOS Simulatorでの実接続確認完了後にPhase 3完了とする。
+
 ---
 
 # Phase 4 — Realtime & Group
@@ -135,12 +151,23 @@ Firestoreへ商品を保存する。
 
 ## Tasks
 
-- Group Member
-- 招待方式
-- Firestore listener
-- StreamProvider
-- メンバー別表示
-- createdBy表示
+- Group作成とMember document作成
+- 6文字の招待コードによるGroup参加
+- 現在GroupのRiverpod管理
+- Group単位のFirestore listener / StreamProvider
+- Member一覧と招待コード表示
+- MembershipベースのSecurity Rules
+- createdBy / purchasedBy表示
+
+## Implementation Status
+
+- 固定の開発用Group依存を廃止
+- `users`、`groups`、`members`、`groupInvites` をRepositoryで管理
+- Groupとowner Member、User所属参照、InviteをTransactionで一括作成
+- Invite documentの直接getとRules検証によりGroup参加を実装
+- Shopping / Purchase Historyを現在Group単位のsnapshot購読へ変更
+- 未所属時のGroup Setup、Member・招待コード確認画面を追加
+- 非MemberのGroup / Itemアクセスを拒否するSecurity Rulesへ強化
 
 ## Test
 
@@ -179,7 +206,26 @@ Firestoreへ商品を保存する。
 - Item create trigger
 - Group member token取得
 - Push送信
-- 通知タップ時のDeep Link
+- Foreground local notification
+- 通知タップ時にShoppingを開く
+- Logout時のDevice token削除
+
+## Implementation Status
+
+- `firebase_messaging` と `flutter_local_notifications` を導入
+- 端末生成IDごとに `users/{uid}/devices/{deviceId}` へTokenを保存
+- Token refresh監視とLogout時削除を実装
+- Item onCreateのTypeScript Cloud Functionと通知対象決定テストを追加
+- 追加者本人を除外し、同じGroupの通知有効DeviceだけへMulticast送信
+- 恒久的に無効なTokenのDevice document cleanupを実装
+- 通知タップ時は既存Auth routingに従いShoppingを開く
+
+## Manual Setup Required
+
+- `katte-dev-jp` をBlaze planへ変更後、Functionsをdeployする
+- Apple Developerで `jp.katte.app` のPush Notificationsを有効化する
+- APNs Authentication KeyをFirebase ConsoleのCloud Messagingへ登録する
+- iPhone実機2台でBackground / Terminated通知と本人除外を確認する
 
 ## Notification
 
@@ -193,34 +239,7 @@ Firestoreへ商品を保存する。
 
 ---
 
-# Phase 6 — Shopping Mode
-
-## Goal
-
-「今買い物している」を共有できる。
-
-## Tasks
-
-- 買い物開始
-- Shopping Session作成
-- グループへ通知
-- 買い物中表示
-- 買い物終了
-
-## Notification
-
-```text
-康平が買い物を始めました
-買ってきてほしいものがあればKatteに追加してね
-```
-
-## Done
-
-買い物中の家族へ商品を追加できる体験が成立する。
-
----
-
-# Phase 7 — UX Polish
+# Phase 6 — UX Polish
 
 ## Goal
 
@@ -242,7 +261,7 @@ Firestoreへ商品を保存する。
 
 ---
 
-# Phase 8 — Quality
+# Phase 7 — Quality
 
 ## Goal
 
@@ -261,7 +280,7 @@ Firestoreへ商品を保存する。
 
 ---
 
-# Phase 9 — Release
+# Phase 8 — Release
 
 ## iOS
 

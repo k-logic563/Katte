@@ -1,22 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../auth/application/auth_providers.dart';
 import '../../auth/application/auth_service.dart';
-import '../settings_providers.dart';
+import '../../groups/group_providers.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final notificationSettings = ref.watch(notificationSettingsProvider);
     final authAction = ref.watch(authControllerProvider);
     final user = switch (ref.watch(authStateProvider)) {
       AsyncData(:final value) => value,
       _ => null,
     };
     final email = _userEmail(user);
+    final currentGroup = ref.watch(currentGroupProvider);
 
     ref.listen(authControllerProvider, (previous, next) {
       next.whenOrNull(
@@ -52,31 +53,15 @@ class SettingsPage extends ConsumerWidget {
           ),
         ),
         const Divider(),
-        const _SectionTitle('通知'),
-        SwitchListTile(
-          key: const Key('item-added-notification-switch'),
-          contentPadding: EdgeInsets.zero,
-          title: const Text('商品追加'),
-          value: notificationSettings.itemAdded,
-          onChanged: ref
-              .read(notificationSettingsProvider.notifier)
-              .setItemAdded,
-        ),
-        SwitchListTile(
-          key: const Key('shopping-started-notification-switch'),
-          contentPadding: EdgeInsets.zero,
-          title: const Text('買い物開始'),
-          value: notificationSettings.shoppingStarted,
-          onChanged: ref
-              .read(notificationSettingsProvider.notifier)
-              .setShoppingStarted,
-        ),
-        const Divider(),
         const _SectionTitle('グループ'),
-        const ListTile(
+        ListTile(
           contentPadding: EdgeInsets.zero,
-          leading: Icon(Icons.group_outlined),
-          title: Text('岩田家'),
+          leading: const Icon(Icons.group_outlined),
+          title: Text(currentGroup?.name ?? 'グループ未選択'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: currentGroup == null
+              ? null
+              : () => context.push('/group-details'),
         ),
         const Divider(),
         const _SectionTitle('その他'),

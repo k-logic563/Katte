@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../groups/group_providers.dart';
+import '../../groups/models/katte_group.dart';
 import '../models/shopping_item.dart';
 import '../shopping_providers.dart';
+import '../shopping_repository.dart';
 
 class ShoppingPage extends ConsumerWidget {
   const ShoppingPage({super.key});
@@ -18,67 +22,189 @@ class ShoppingPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final items = ref.watch(shoppingItemsProvider);
-    final isShopping = ref.watch(shoppingModeProvider);
-    final pendingItems = items.where((item) => !item.isPurchased);
-    final purchasedItems = items.where((item) => item.isPurchased);
+    final items = ref.watch(pendingShoppingItemsProvider);
+    final group = ref.watch(currentGroupProvider);
+    final groups = ref.watch(userGroupsProvider).value ?? const [];
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
       children: [
-        Text('岩田家', style: Theme.of(context).textTheme.headlineMedium),
-        const SizedBox(height: 24),
-        if (isShopping) ...[
-          const _ShoppingModeCard(),
-          const SizedBox(height: 24),
-        ],
-        Text('買ってきてほしいもの', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 12),
-        if (items.isEmpty)
-          _EmptyState(onAdd: () => _openAddItemSheet(context))
-        else ...[
-          for (final item in pendingItems) _ShoppingItemTile(item: item),
-          for (final item in purchasedItems)
-            Opacity(opacity: 0.55, child: _ShoppingItemTile(item: item)),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              key: const Key('open-add-item-sheet-button'),
-              onPressed: () => _openAddItemSheet(context),
-              icon: const Icon(Icons.add),
-              label: const Text('買ってきてほしいもの'),
+        Row(
+          children: [
+            Expanded(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  key: const Key('group-switch-button'),
+                  onPressed: groups.isEmpty
+                      ? null
+                      : () => _openGroupSwitcher(context, ref, groups),
+                  iconAlignment: IconAlignment.end,
+                  icon: const Icon(Icons.arrow_drop_down),
+                  label: Text(
+                    group?.name ?? 'グループ',
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
+                ),
+              ),
             ),
-          ),
-        ],
-        const SizedBox(height: 12),
-        if (!isShopping)
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              key: const Key('start-shopping-button'),
-              onPressed: () => ref.read(shoppingModeProvider.notifier).toggle(),
-              icon: const Icon(Icons.shopping_cart_outlined),
-              label: const Text('買い物をはじめる'),
+            IconButton(
+              key: const Key('group-details-button'),
+              tooltip: 'グループ情報',
+              onPressed: () => context.push('/group-details'),
+              icon: const Icon(Icons.group_outlined),
             ),
+            IconButton(
+              key: const Key('purchase-history-button'),
+              tooltip: '購入履歴',
+              onPressed: () => context.push('/purchase-history'),
+              icon: const Icon(Icons.history),
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
+        ...items.when(
+          loading: () => const [
+            Padding(
+              padding: EdgeInsets.symmetric(vertical: 48),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          ],
+          error: (_, _) => [
+            _LoadError(
+              onRetry: () => ref.invalidate(pendingShoppingItemsProvider),
+            ),
+          ],
+          data: (items) => _buildItemList(
+            items: items,
+            onAdd: () => _openAddItemSheet(context),
+            onPurchase: (item) => _purchaseItem(context, ref, item),
           ),
+        ),
       ],
     );
+  }
+
+  Future<void> _openGroupSwitcher(
+    BuildContext context,
+    WidgetRef ref,
+    List<KatteGroup> groups,
+  ) {
+    return showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      builder: (context) => ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        children: [
+          for (final group in groups)
+            ListTile(
+              key: Key('select-group-${group.id}'),
+              title: Text(group.name),
+              trailing: group.id == ref.read(currentGroupProvider)?.id
+                  ? const Icon(Icons.check)
+                  : null,
+              onTap: () {
+                ref.read(currentGroupIdProvider.notifier).select(group.id);
+                Navigator.of(context).pop();
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildItemList({
+    required List<ShoppingItem> items,
+    required VoidCallback onAdd,
+    required ValueChanged<ShoppingItem> onPurchase,
+  }) {
+    if (items.isEmpty) {
+      return [_EmptyState(onAdd: onAdd)];
+    }
+
+    return [
+      for (final item in items)
+        _ShoppingItemTile(item: item, onPurchase: () => onPurchase(item)),
+      const SizedBox(height: 16),
+      SizedBox(
+        width: double.infinity,
+        child: FilledButton.icon(
+          key: const Key('open-add-item-sheet-button'),
+          onPressed: onAdd,
+          icon: const Icon(Icons.add),
+          label: const Text('追加'),
+        ),
+      ),
+    ];
+  }
+
+  Future<void> _purchaseItem(
+    BuildContext context,
+    WidgetRef ref,
+    ShoppingItem item,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final controller = ref.read(shoppingControllerProvider.notifier);
+    final succeeded = await controller.setPurchased(
+      itemId: item.id,
+      isPurchased: true,
+    );
+    if (!messenger.mounted) {
+      return;
+    }
+    if (!succeeded) {
+      messenger.showSnackBar(const SnackBar(content: Text('更新できませんでした。')));
+      return;
+    }
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 4),
+          persist: false,
+          content: Text('${item.name}を購入済みにしました'),
+          action: SnackBarAction(
+            label: '元に戻す',
+            onPressed: () => _undoPurchase(
+              controller: controller,
+              messenger: messenger,
+              itemId: item.id,
+            ),
+          ),
+        ),
+      );
+  }
+
+  Future<void> _undoPurchase({
+    required ShoppingController controller,
+    required ScaffoldMessengerState messenger,
+    required String itemId,
+  }) async {
+    final succeeded = await controller.setPurchased(
+      itemId: itemId,
+      isPurchased: false,
+    );
+    if (!succeeded && messenger.mounted) {
+      messenger.showSnackBar(const SnackBar(content: Text('元に戻せませんでした。')));
+    }
   }
 }
 
 class _ShoppingItemTile extends ConsumerWidget {
-  const _ShoppingItemTile({required this.item});
+  const _ShoppingItemTile({required this.item, required this.onPurchase});
 
   final ShoppingItem item;
+  final VoidCallback onPurchase;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final quantity = item.quantity == null ? '' : ' ×${item.quantity}';
+    final isUpdating = ref.watch(shoppingControllerProvider).isLoading;
+    final quantity = item.quantity == 1 ? '' : ' ×${item.quantity}';
     final detail = item.isPurchased
-        ? '${item.createdBy} → ${item.purchasedBy}が購入'
-        : '${item.createdBy} ・ ${_timeAgo(item.createdAt)}';
-    final details = [detail, ?item.note];
+        ? '${item.createdByName} → ${item.purchasedByName ?? fallbackUserDisplayName}が購入'
+        : '${item.createdByName} ・ ${_timeAgo(item.createdAt)}';
+    final details = [detail, if (item.note.isNotEmpty) item.note];
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -86,53 +212,44 @@ class _ShoppingItemTile extends ConsumerWidget {
         key: Key('purchase-${item.id}'),
         controlAffinity: ListTileControlAffinity.leading,
         value: item.isPurchased,
-        onChanged: (_) {
-          ref.read(shoppingItemsProvider.notifier).togglePurchased(item.id);
-        },
+        onChanged: isUpdating ? null : (_) => onPurchase(),
         title: Text(
           '${item.name}$quantity',
-          style: TextStyle(
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
             decoration: item.isPurchased ? TextDecoration.lineThrough : null,
           ),
         ),
-        subtitle: Text(details.join('\n')),
+        subtitle: Text(
+          details.join('\n'),
+          style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+        ),
       ),
     );
   }
 }
 
-class _ShoppingModeCard extends ConsumerWidget {
-  const _ShoppingModeCard();
+class _LoadError extends StatelessWidget {
+  const _LoadError({required this.onRetry});
+
+  final VoidCallback onRetry;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.shopping_cart),
-                const SizedBox(width: 8),
-                Text('買い物中', style: Theme.of(context).textTheme.titleLarge),
-              ],
-            ),
-            const SizedBox(height: 8),
-            const Text('買い忘れがないか確認しよう'),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                key: const Key('finish-shopping-button'),
-                onPressed: () =>
-                    ref.read(shoppingModeProvider.notifier).toggle(),
-                child: const Text('買い物を終了'),
-              ),
-            ),
-          ],
-        ),
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 40),
+      child: Column(
+        children: [
+          Text(
+            '買い物リストを読み込めませんでした。',
+            style: Theme.of(context).textTheme.titleMedium,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          const Text('もう一度お試しください。'),
+          const SizedBox(height: 16),
+          OutlinedButton(onPressed: onRetry, child: const Text('再試行')),
+        ],
       ),
     );
   }
@@ -176,6 +293,7 @@ class _AddItemSheetState extends ConsumerState<_AddItemSheet> {
   final _nameController = TextEditingController();
   final _quantityController = TextEditingController();
   final _noteController = TextEditingController();
+  String? _errorMessage;
 
   @override
   void dispose() {
@@ -185,25 +303,34 @@ class _AddItemSheetState extends ConsumerState<_AddItemSheet> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
 
     final quantityText = _quantityController.text.trim();
     final note = _noteController.text.trim();
-    ref
-        .read(shoppingItemsProvider.notifier)
+    setState(() => _errorMessage = null);
+    final succeeded = await ref
+        .read(shoppingControllerProvider.notifier)
         .addItem(
           name: _nameController.text.trim(),
-          quantity: quantityText.isEmpty ? null : int.parse(quantityText),
-          note: note.isEmpty ? null : note,
+          quantity: quantityText.isEmpty ? 1 : int.parse(quantityText),
+          note: note,
         );
-    Navigator.of(context).pop();
+    if (!mounted) {
+      return;
+    }
+    if (succeeded) {
+      Navigator.of(context).pop();
+    } else {
+      setState(() => _errorMessage = '追加できませんでした。もう一度お試しください。');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final isSaving = ref.watch(shoppingControllerProvider).isLoading;
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(
         24,
@@ -257,13 +384,29 @@ class _AddItemSheetState extends ConsumerState<_AddItemSheet> {
               controller: _noteController,
               textInputAction: TextInputAction.done,
               decoration: const InputDecoration(labelText: 'メモ（任意）'),
-              onFieldSubmitted: (_) => _submit(),
+              onFieldSubmitted: (_) {
+                if (!isSaving) {
+                  _submit();
+                }
+              },
             ),
+            if (_errorMessage != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _errorMessage!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
             const SizedBox(height: 20),
             FilledButton(
               key: const Key('add-item-button'),
-              onPressed: _submit,
-              child: const Text('追加する'),
+              onPressed: isSaving ? null : _submit,
+              child: isSaving
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('追加する'),
             ),
           ],
         ),
@@ -272,7 +415,10 @@ class _AddItemSheetState extends ConsumerState<_AddItemSheet> {
   }
 }
 
-String _timeAgo(DateTime createdAt) {
+String _timeAgo(DateTime? createdAt) {
+  if (createdAt == null) {
+    return 'たった今';
+  }
   final minutes = DateTime.now().difference(createdAt).inMinutes;
   if (minutes < 1) {
     return 'たった今';

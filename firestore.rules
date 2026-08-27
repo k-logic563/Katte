@@ -1,0 +1,167 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function isGroupMember(groupId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+    }
+
+    function validMemberFields(userId) {
+      return request.resource.data.keys().hasOnly([
+          'userId',
+          'displayName',
+          'photoUrl',
+          'role',
+          'joinedWithInviteCode',
+          'joinedAt'
+        ])
+        && request.resource.data.userId == userId
+        && request.resource.data.displayName is string
+        && request.resource.data.role in ['owner', 'member']
+        && request.resource.data.joinedWithInviteCode is string;
+    }
+
+    match /users/{userId} {
+      allow get: if isSelf(userId);
+      allow create: if isSelf(userId)
+        && request.resource.data.keys().hasOnly([
+          'displayName', 'email', 'photoUrl', 'createdAt', 'updatedAt'
+        ]);
+      allow update: if isSelf(userId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName', 'email', 'photoUrl', 'updatedAt'
+        ]);
+      allow delete, list: if false;
+
+      match /groups/{groupId} {
+        allow read: if isSelf(userId);
+        allow create: if isSelf(userId)
+          && request.resource.data.groupId == groupId
+          && request.resource.data.role in ['owner', 'member']
+          && existsAfter(/databases/$(database)/documents/groups/$(groupId)/members/$(userId));
+        allow update, delete: if false;
+      }
+
+      match /devices/{deviceId} {
+        allow read: if isSelf(userId);
+        allow create, update: if isSelf(userId)
+          && request.resource.data.keys().hasOnly([
+            'fcmToken',
+            'platform',
+            'notificationEnabled',
+            'createdAt',
+            'updatedAt'
+          ])
+          && request.resource.data.fcmToken is string
+          && request.resource.data.platform in ['ios', 'android']
+          && request.resource.data.notificationEnabled is bool;
+        allow delete: if isSelf(userId);
+      }
+    }
+
+    match /groupInvites/{inviteCode} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['groupId', 'createdAt'])
+        && request.resource.data.groupId is string
+        && getAfter(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.createdBy == request.auth.uid
+        && getAfter(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.inviteCode == inviteCode;
+      allow update, delete: if false;
+    }
+
+    match /groups/{groupId} {
+      allow get: if isGroupMember(groupId);
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'name', 'createdBy', 'inviteCode', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.inviteCode is string
+        && existsAfter(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid))
+        && getAfter(/databases/$(database)/documents/groupInvites/$(request.resource.data.inviteCode)).data.groupId == groupId;
+      allow update, delete: if false;
+
+      match /members/{userId} {
+        allow read: if isGroupMember(groupId);
+        allow create: if isSelf(userId)
+          && validMemberFields(userId)
+          && (
+            (
+              request.resource.data.role == 'owner'
+              && getAfter(/databases/$(database)/documents/groups/$(groupId)).data.createdBy == request.auth.uid
+              && getAfter(/databases/$(database)/documents/groups/$(groupId)).data.inviteCode == request.resource.data.joinedWithInviteCode
+            )
+            ||
+            (
+              request.resource.data.role == 'member'
+              && get(/databases/$(database)/documents/groupInvites/$(request.resource.data.joinedWithInviteCode)).data.groupId == groupId
+            )
+          );
+        allow update, delete: if false;
+      }
+
+      match /items/{itemId} {
+        allow read: if isGroupMember(groupId);
+        allow create: if isGroupMember(groupId)
+          && request.resource.data.keys().hasOnly([
+            'name',
+            'quantity',
+            'note',
+            'status',
+            'createdBy',
+            'createdByName',
+            'createdAt',
+            'purchasedBy',
+            'purchasedByName',
+            'purchasedAt',
+            'updatedAt'
+          ])
+          && request.resource.data.name is string
+          && request.resource.data.quantity is int
+          && request.resource.data.quantity > 0
+          && request.resource.data.status == 'pending'
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.purchasedBy == null
+          && request.resource.data.purchasedByName == null
+          && request.resource.data.purchasedAt == null;
+        allow update: if isGroupMember(groupId)
+          && request.resource.data.createdBy == resource.data.createdBy
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status',
+            'purchasedBy',
+            'purchasedByName',
+            'purchasedAt',
+            'updatedAt'
+          ])
+          && (
+            (
+              request.resource.data.status == 'purchased'
+              && request.resource.data.purchasedBy == request.auth.uid
+              && request.resource.data.purchasedByName is string
+              && request.resource.data.purchasedAt is timestamp
+            )
+            ||
+            (
+              request.resource.data.status == 'pending'
+              && request.resource.data.purchasedBy == null
+              && request.resource.data.purchasedByName == null
+              && request.resource.data.purchasedAt == null
+            )
+          );
+        allow delete: if isGroupMember(groupId);
+      }
+    }
+  }
+}
