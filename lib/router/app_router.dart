@@ -7,6 +7,7 @@ import '../features/auth/presentation/login_page.dart';
 import '../features/groups/group_providers.dart';
 import '../features/groups/presentation/group_details_page.dart';
 import '../features/groups/presentation/group_setup_page.dart';
+import '../features/monitoring/monitoring_providers.dart';
 import '../features/settings/presentation/settings_page.dart';
 import '../features/shopping/presentation/purchase_history_page.dart';
 import '../features/shopping/presentation/shopping_page.dart';
@@ -15,8 +16,12 @@ import '../shared/main_scaffold.dart';
 final appRouterProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authStateProvider);
   final userGroups = ref.watch(userGroupsProvider);
+  final analyticsObserver = ref
+      .watch(analyticsServiceProvider)
+      .navigatorObserver;
   final router = GoRouter(
     initialLocation: '/loading',
+    observers: [analyticsObserver],
     redirect: (context, state) {
       final location = state.matchedLocation;
       final isLoading = location == '/loading';
@@ -77,15 +82,20 @@ class _LoadingPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Katte'),
-            SizedBox(height: 20),
-            CircularProgressIndicator(),
-          ],
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Katte', style: Theme.of(context).textTheme.headlineSmall),
+              const SizedBox(height: 20),
+              const SizedBox.square(
+                dimension: 28,
+                child: CircularProgressIndicator(strokeWidth: 3),
+              ),
+            ],
+          ),
         ),
       ),
     );

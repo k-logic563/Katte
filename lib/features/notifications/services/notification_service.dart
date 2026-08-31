@@ -199,8 +199,7 @@ class FirebaseNotificationService implements NotificationService {
     );
   }
 
-  void _handleNotificationTap(RemoteMessage message) {
-    debugPrint('Notification opened: ${message.data['type'] ?? 'unknown'}');
+  void _handleNotificationTap(RemoteMessage _) {
     _notificationTaps.add(null);
   }
 
@@ -233,7 +232,6 @@ class FirebaseNotificationService implements NotificationService {
       if (!snapshot.exists) 'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
-    debugPrint('FCM token registered.');
   }
 
   @override

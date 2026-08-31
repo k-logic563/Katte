@@ -31,7 +31,7 @@
         "default": {
           "projectId": "katte-dev-jp",
           "appId": "1:738688838159:ios:53fe392056e7dd252e917a",
-          "uploadDebugSymbols": false,
+          "uploadDebugSymbols": true,
           "fileOutput": "ios/Runner/GoogleService-Info.plist"
         }
       },

@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 import '../auth/application/auth_service.dart';
 import 'models/katte_group.dart';
@@ -23,6 +24,10 @@ abstract interface class GroupRepository {
   });
 
   Stream<List<GroupMember>> watchMembers(String groupId);
+
+  Future<void> deleteGroup({required String groupId});
+
+  Future<void> leaveGroup({required String groupId, required AuthUser user});
 }
 
 class GroupNotFoundException implements Exception {}
@@ -32,15 +37,21 @@ class AlreadyGroupMemberException implements Exception {}
 class InviteCodeGenerationException implements Exception {}
 
 class FirestoreGroupRepository implements GroupRepository {
-  FirestoreGroupRepository({FirebaseFirestore? firestore, Random? random})
-    : _firestore = firestore ?? FirebaseFirestore.instance,
-      _random = random ?? Random.secure();
+  FirestoreGroupRepository({
+    FirebaseFirestore? firestore,
+    FirebaseFunctions? functions,
+    Random? random,
+  }) : _firestore = firestore ?? FirebaseFirestore.instance,
+       _functions =
+           functions ?? FirebaseFunctions.instanceFor(region: 'us-central1'),
+       _random = random ?? Random.secure();
 
   static const _inviteCharacters = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   static const _inviteCodeLength = 6;
   static const _inviteGenerationAttempts = 8;
 
   final FirebaseFirestore _firestore;
+  final FirebaseFunctions _functions;
   final Random _random;
 
   @override
@@ -250,12 +261,49 @@ class FirestoreGroupRepository implements GroupRepository {
         );
   }
 
+  @override
+  Future<void> deleteGroup({required String groupId}) async {
+    await _functions.httpsCallable('deleteGroup').call<Map<String, dynamic>>({
+      'groupId': groupId,
+    });
+  }
+
+  @override
+  Future<void> leaveGroup({
+    required String groupId,
+    required AuthUser user,
+  }) async {
+    final memberReference = _firestore
+        .collection('groups')
+        .doc(groupId)
+        .collection('members')
+        .doc(user.uid);
+    final userGroupReference = _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('groups')
+        .doc(groupId);
+
+    await _firestore.runTransaction((transaction) async {
+      final member = await transaction.get(memberReference);
+      if (!member.exists || member.data()?['role'] != 'member') {
+        throw const GroupRoleException();
+      }
+      transaction.delete(memberReference);
+      transaction.delete(userGroupReference);
+    });
+  }
+
   String _generateInviteCode() {
     return List.generate(
       _inviteCodeLength,
       (_) => _inviteCharacters[_random.nextInt(_inviteCharacters.length)],
     ).join();
   }
+}
+
+class GroupRoleException implements Exception {
+  const GroupRoleException();
 }
 
 Map<String, Object?> _memberData({

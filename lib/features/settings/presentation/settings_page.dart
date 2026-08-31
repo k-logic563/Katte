@@ -24,7 +24,9 @@ class SettingsPage extends ConsumerWidget {
         error: (error, stackTrace) {
           ScaffoldMessenger.of(context)
             ..hideCurrentSnackBar()
-            ..showSnackBar(SnackBar(content: Text(error.toString())));
+            ..showSnackBar(
+              const SnackBar(content: Text('ログアウトできませんでした。もう一度お試しください。')),
+            );
         },
       );
     });
@@ -63,13 +65,7 @@ class SettingsPage extends ConsumerWidget {
               ? null
               : () => context.push('/group-details'),
         ),
-        const Divider(),
-        const _SectionTitle('その他'),
-        const ListTile(contentPadding: EdgeInsets.zero, title: Text('利用規約')),
-        const ListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text('プライバシーポリシー'),
-        ),
+        const Divider(height: 32),
         const ListTile(
           contentPadding: EdgeInsets.zero,
           title: Text('バージョン'),

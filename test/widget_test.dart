@@ -11,8 +11,11 @@ import 'package:katte/features/groups/group_providers.dart';
 import 'package:katte/features/groups/group_repository.dart'
     hide fallbackUserDisplayName;
 import 'package:katte/features/groups/models/katte_group.dart';
+import 'package:katte/features/monitoring/monitoring_providers.dart';
+import 'package:katte/features/monitoring/monitoring_services.dart';
 import 'package:katte/features/notifications/application/notification_service_provider.dart';
 import 'package:katte/features/notifications/services/notification_service.dart';
+import 'package:katte/features/shopping/models/item_suggestion.dart';
 import 'package:katte/features/shopping/models/shopping_item.dart';
 import 'package:katte/features/shopping/shopping_providers.dart';
 import 'package:katte/features/shopping/shopping_repository.dart';
@@ -32,24 +35,89 @@ const testGroup = KatteGroup(
 );
 
 void main() {
+  test('Analytics event名はparameterを持たない固定snake_caseである', () {
+    expect(KatteAnalyticsEvent.values.map((event) => event.eventName), [
+      'login',
+      'group_created',
+      'group_joined',
+      'shopping_item_added',
+      'shopping_item_purchased',
+      'shopping_item_undo',
+      'group_left',
+      'group_deleted',
+    ]);
+  });
+
+  test('Suggestion名を正規化し安全なdocument IDへ変換する', () {
+    final normalized = normalizeSuggestionName('  MILK / 1L  ');
+
+    expect(normalized, 'milk / 1l');
+    expect(itemSuggestionDocumentId(normalized), isNot(contains('/')));
+  });
+
+  test('Suggestionは完全一致、最近使用、useCountの順で並ぶ', () {
+    final now = DateTime.now();
+    final suggestions = [
+      _suggestion(name: '牛乳 1L', useCount: 10, lastUsedAt: now),
+      _suggestion(
+        name: '牛乳',
+        useCount: 1,
+        lastUsedAt: now.subtract(const Duration(days: 1)),
+      ),
+      _suggestion(name: '牛乳 500ml', useCount: 2, lastUsedAt: now),
+      _suggestion(name: '卵', useCount: 20, lastUsedAt: now),
+    ];
+
+    expect(rankItemSuggestions(suggestions, '牛乳').map((item) => item.name), [
+      '牛乳',
+      '牛乳 1L',
+      '牛乳 500ml',
+    ]);
+  });
+
+  testWidgets('Auth確認中はLoadingを表示する', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authServiceProvider.overrideWithValue(PendingAuthService()),
+          notificationServiceProvider.overrideWithValue(
+            FakeNotificationService(),
+          ),
+          analyticsServiceProvider.overrideWithValue(FakeAnalyticsService()),
+          crashReportingServiceProvider.overrideWithValue(
+            FakeCrashReportingService(),
+          ),
+        ],
+        child: const KatteApp(),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Katte'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+  });
+
   testWidgets('未ログイン時はLoginを表示する', (tester) async {
     await _pumpApp(tester);
 
     final app = tester.widget<MaterialApp>(find.byType(MaterialApp));
     expect(app.theme?.textTheme.bodyMedium?.fontFamily, contains('NotoSansJP'));
+    expect(find.byKey(const Key('brand-app-icon')), findsOneWidget);
     expect(find.text('Katte'), findsOneWidget);
     expect(find.text('家族の「買っといて」を、\nリアルタイムで共有。'), findsOneWidget);
     expect(find.text('Googleで続ける'), findsOneWidget);
   });
 
   testWidgets('Google Login後に所属GroupのShoppingへ進む', (tester) async {
-    await _pumpApp(tester);
+    final analytics = FakeAnalyticsService();
+    await _pumpApp(tester, analyticsService: analytics);
 
     await tester.tap(find.byKey(const Key('google-login-button')));
     await tester.pumpAndSettle();
 
     expect(find.text('岩田家'), findsOneWidget);
     expect(find.byKey(const Key('purchase-history-button')), findsOneWidget);
+    expect(analytics.events, contains(KatteAnalyticsEvent.login));
   });
 
   testWidgets('ログイン後に通知Permission・Token登録処理を開始する', (tester) async {
@@ -73,10 +141,12 @@ void main() {
 
   testWidgets('Group作成後にShoppingへ進む', (tester) async {
     final groupRepository = FakeGroupRepository(const []);
+    final analytics = FakeAnalyticsService();
     await _pumpApp(
       tester,
       initialUser: testUser,
       groupRepository: groupRepository,
+      analyticsService: analytics,
     );
 
     await tester.tap(find.byKey(const Key('open-create-group-button')));
@@ -88,14 +158,17 @@ void main() {
     expect(find.text('康平家'), findsOneWidget);
     expect(groupRepository.createdBy, testUser.uid);
     expect(groupRepository.ensureUserCount, 1);
+    expect(analytics.events, contains(KatteAnalyticsEvent.groupCreated));
   });
 
   testWidgets('招待コードでGroup参加後にShoppingへ進む', (tester) async {
     final groupRepository = FakeGroupRepository(const []);
+    final analytics = FakeAnalyticsService();
     await _pumpApp(
       tester,
       initialUser: testUser,
       groupRepository: groupRepository,
+      analyticsService: analytics,
     );
 
     await tester.tap(find.byKey(const Key('open-join-group-button')));
@@ -110,6 +183,7 @@ void main() {
 
     expect(find.text('岩田家'), findsOneWidget);
     expect(groupRepository.lastJoinedCode, 'K7P4XQ');
+    expect(analytics.events, contains(KatteAnalyticsEvent.groupJoined));
   });
 
   testWidgets('存在しない招待コードは安全なエラーを表示する', (tester) async {
@@ -126,6 +200,20 @@ void main() {
 
     expect(find.text('グループが見つかりませんでした。'), findsOneWidget);
     expect(find.textContaining('FirebaseException'), findsNothing);
+  });
+
+  testWidgets('短すぎる招待コードは送信せず入力エラーを表示する', (tester) async {
+    final repository = FakeGroupRepository(const []);
+    await _pumpApp(tester, initialUser: testUser, groupRepository: repository);
+
+    await tester.tap(find.byKey(const Key('open-join-group-button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('invite-code-field')), 'abc');
+    await tester.tap(find.byKey(const Key('join-group-button')));
+    await tester.pump();
+
+    expect(find.text('招待コードは6〜8文字で入力してください'), findsOneWidget);
+    expect(repository.lastJoinedCode, isNull);
   });
 
   testWidgets('Shopping画面は現在Groupのpending商品だけ表示する', (tester) async {
@@ -149,6 +237,25 @@ void main() {
     expect(find.text('追加する'), findsOneWidget);
   });
 
+  testWidgets('小さい画面でも長い商品名を省略可能な複数行で表示する', (tester) async {
+    tester.view.physicalSize = const Size(320, 568);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    const longName = '北海道産の低脂肪タイプの牛乳を2本買ってきてほしい';
+
+    await _pumpApp(
+      tester,
+      initialUser: testUser,
+      initialItems: [_item(id: 'long-name', name: longName)],
+    );
+
+    final name = tester.widget<Text>(find.text(longName));
+    expect(name.maxLines, 3);
+    expect(name.overflow, TextOverflow.ellipsis);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Firestoreの権限エラー時はError Stateを表示する', (tester) async {
     await _pumpApp(
       tester,
@@ -164,10 +271,12 @@ void main() {
 
   testWidgets('Bottom Sheetから現在Groupへ商品を追加できる', (tester) async {
     final repository = FakeShoppingRepository(_defaultItems());
+    final analytics = FakeAnalyticsService();
     await _pumpApp(
       tester,
       initialUser: testUser,
       shoppingRepository: repository,
+      analyticsService: analytics,
     );
 
     final openButton = find.byKey(const Key('open-add-item-sheet-button'));
@@ -184,6 +293,135 @@ void main() {
 
     expect(find.text('パン ×2'), findsOneWidget);
     expect(repository.lastWrittenGroupId, testGroup.id);
+    expect(repository.suggestion(testGroup.id, 'パン')?.useCount, 1);
+    expect(analytics.events, contains(KatteAnalyticsEvent.shoppingItemAdded));
+  });
+
+  testWidgets('履歴0件ではSuggestion sectionを表示しない', (tester) async {
+    await _pumpSignedInApp(tester);
+
+    await tester.ensureVisible(
+      find.byKey(const Key('open-add-item-sheet-button')),
+    );
+    await tester.tap(find.byKey(const Key('open-add-item-sheet-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('最近使ったもの'), findsNothing);
+    expect(find.text('候補'), findsNothing);
+  });
+
+  testWidgets('最近使った候補をタップすると商品名だけInputへ反映する', (tester) async {
+    final repository = FakeShoppingRepository(
+      _defaultItems(),
+      suggestionsByGroup: {
+        testGroup.id: [_suggestion(name: '牛乳'), _suggestion(name: '卵')],
+      },
+    );
+    await _pumpApp(
+      tester,
+      initialUser: testUser,
+      shoppingRepository: repository,
+    );
+
+    await tester.ensureVisible(
+      find.byKey(const Key('open-add-item-sheet-button')),
+    );
+    await tester.tap(find.byKey(const Key('open-add-item-sheet-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('最近使ったもの'), findsOneWidget);
+    await tester.enterText(find.byKey(const Key('item-quantity-field')), '3');
+    await tester.tap(_suggestionFinder('牛乳'));
+    await tester.pump();
+
+    final nameField = tester.widget<TextFormField>(
+      find.byKey(const Key('item-name-field')),
+    );
+    final quantityField = tester.widget<TextFormField>(
+      find.byKey(const Key('item-quantity-field')),
+    );
+    expect(nameField.controller?.text, '牛乳');
+    expect(quantityField.controller?.text, '3');
+    expect(find.byKey(const Key('add-item-button')), findsOneWidget);
+    expect(repository.lastWrittenGroupId, isNull);
+  });
+
+  testWidgets('入力中は取得済みSuggestionを前方一致filterする', (tester) async {
+    final repository = FakeShoppingRepository(
+      _defaultItems(),
+      suggestionsByGroup: {
+        testGroup.id: [
+          _suggestion(name: '牛乳'),
+          _suggestion(name: '牛乳 1L'),
+          _suggestion(name: '卵'),
+        ],
+      },
+    );
+    await _pumpApp(
+      tester,
+      initialUser: testUser,
+      shoppingRepository: repository,
+    );
+
+    await tester.ensureVisible(
+      find.byKey(const Key('open-add-item-sheet-button')),
+    );
+    await tester.tap(find.byKey(const Key('open-add-item-sheet-button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('item-name-field')), '牛');
+    await tester.pump();
+
+    expect(find.text('候補'), findsOneWidget);
+    expect(_suggestionFinder('牛乳'), findsOneWidget);
+    expect(_suggestionFinder('牛乳 1L'), findsOneWidget);
+    expect(_suggestionFinder('卵'), findsNothing);
+    expect(repository.fetchedSuggestionGroupIds, [testGroup.id]);
+  });
+
+  testWidgets('Suggestion取得失敗でも商品名を入力できる', (tester) async {
+    final repository = FakeShoppingRepository(
+      _defaultItems(),
+      failSuggestions: true,
+    );
+    await _pumpApp(
+      tester,
+      initialUser: testUser,
+      shoppingRepository: repository,
+    );
+
+    await tester.ensureVisible(
+      find.byKey(const Key('open-add-item-sheet-button')),
+    );
+    await tester.tap(find.byKey(const Key('open-add-item-sheet-button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('item-name-field')), 'りんご');
+
+    final nameField = tester.widget<TextFormField>(
+      find.byKey(const Key('item-name-field')),
+    );
+    expect(nameField.controller?.text, 'りんご');
+    expect(find.text('最近使ったもの'), findsNothing);
+    expect(find.byKey(const Key('add-item-button')), findsOneWidget);
+  });
+
+  testWidgets('同じ商品を再登録するとSuggestion useCountが増える', (tester) async {
+    final repository = FakeShoppingRepository(_defaultItems());
+    await _pumpApp(
+      tester,
+      initialUser: testUser,
+      shoppingRepository: repository,
+    );
+
+    for (var count = 1; count <= 2; count++) {
+      await tester.ensureVisible(
+        find.byKey(const Key('open-add-item-sheet-button')),
+      );
+      await tester.tap(find.byKey(const Key('open-add-item-sheet-button')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('item-name-field')), '牛乳');
+      await tester.tap(find.byKey(const Key('add-item-button')));
+      await tester.pumpAndSettle();
+      expect(repository.suggestion(testGroup.id, '牛乳')?.useCount, count);
+    }
   });
 
   testWidgets('商品名が空の場合は追加できない', (tester) async {
@@ -201,8 +439,24 @@ void main() {
     expect(find.text('商品名を入力してください'), findsOneWidget);
   });
 
-  testWidgets('購入済みにすると一覧から消えUndoで戻る', (tester) async {
+  testWidgets('商品名が空白だけの場合も追加できない', (tester) async {
     await _pumpSignedInApp(tester);
+
+    await tester.ensureVisible(
+      find.byKey(const Key('open-add-item-sheet-button')),
+    );
+    await tester.tap(find.byKey(const Key('open-add-item-sheet-button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('item-name-field')), '   ');
+    await tester.tap(find.byKey(const Key('add-item-button')));
+    await tester.pump();
+
+    expect(find.text('商品名を入力してください'), findsOneWidget);
+  });
+
+  testWidgets('購入済みにすると一覧から消えUndoで戻る', (tester) async {
+    final analytics = FakeAnalyticsService();
+    await _pumpApp(tester, initialUser: testUser, analyticsService: analytics);
 
     final milkTile = find.byKey(const Key('purchase-milk'));
     await tester.tap(
@@ -215,6 +469,13 @@ void main() {
     await tester.tap(find.text('元に戻す'));
     await tester.pumpAndSettle();
     expect(find.text('牛乳'), findsOneWidget);
+    expect(
+      analytics.events,
+      containsAll([
+        KatteAnalyticsEvent.shoppingItemPurchased,
+        KatteAnalyticsEvent.shoppingItemUndo,
+      ]),
+    );
   });
 
   testWidgets('Realtime更新で商品行が先に消えてもSnackBarを表示する', (tester) async {
@@ -335,6 +596,97 @@ void main() {
     expect(find.byKey(const Key('copy-invite-code-button')), findsOneWidget);
   });
 
+  testWidgets('ownerは削除確認をキャンセルでき、退出操作は表示されない', (tester) async {
+    final repository = FakeGroupRepository(const [testGroup]);
+    await _pumpApp(tester, initialUser: testUser, groupRepository: repository);
+
+    await tester.tap(find.byKey(const Key('group-details-button')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('delete-group-button')), findsOneWidget);
+    expect(find.byKey(const Key('leave-group-button')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('delete-group-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('岩田家を削除しますか？'), findsOneWidget);
+    expect(find.textContaining('この操作は取り消せません'), findsOneWidget);
+    await tester.tap(find.text('キャンセル'));
+    await tester.pumpAndSettle();
+
+    expect(repository.deletedGroupId, isNull);
+    expect(find.byKey(const Key('delete-group-button')), findsOneWidget);
+  });
+
+  testWidgets('ownerがGroupを削除するとcurrentGroupを破棄してGroup Setupへ進む', (
+    tester,
+  ) async {
+    final repository = FakeGroupRepository(const [testGroup]);
+    final analytics = FakeAnalyticsService();
+    await _pumpApp(
+      tester,
+      initialUser: testUser,
+      groupRepository: repository,
+      analyticsService: analytics,
+    );
+
+    await tester.tap(find.byKey(const Key('group-details-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('delete-group-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('confirm-delete-group')));
+    await tester.pumpAndSettle();
+
+    expect(repository.deletedGroupId, testGroup.id);
+    expect(find.text('家族と買い物リストを共有しよう'), findsOneWidget);
+    expect(find.text('岩田家'), findsNothing);
+    expect(analytics.events, contains(KatteAnalyticsEvent.groupDeleted));
+  });
+
+  testWidgets('Group削除失敗時は安全なエラーを表示して確認Dialogに留まる', (tester) async {
+    final repository = FakeGroupRepository(const [
+      testGroup,
+    ], failRemoval: true);
+    await _pumpApp(tester, initialUser: testUser, groupRepository: repository);
+
+    await tester.tap(find.byKey(const Key('group-details-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('delete-group-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('confirm-delete-group')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('グループを削除できませんでした'), findsOneWidget);
+    expect(find.text('岩田家を削除しますか？'), findsOneWidget);
+    expect(find.textContaining('FirebaseException'), findsNothing);
+  });
+
+  testWidgets('memberが退出するとcurrentGroupを破棄してGroup Setupへ進む', (tester) async {
+    final repository = FakeGroupRepository(const [
+      testGroup,
+    ], currentUserRole: GroupMemberRole.member);
+    final analytics = FakeAnalyticsService();
+    await _pumpApp(
+      tester,
+      initialUser: testUser,
+      groupRepository: repository,
+      analyticsService: analytics,
+    );
+
+    await tester.tap(find.byKey(const Key('group-details-button')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('leave-group-button')), findsOneWidget);
+    expect(find.byKey(const Key('delete-group-button')), findsNothing);
+    await tester.tap(find.byKey(const Key('leave-group-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('岩田家から退出しますか？'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('confirm-leave-group')));
+    await tester.pumpAndSettle();
+
+    expect(repository.leftGroupId, testGroup.id);
+    expect(find.text('家族と買い物リストを共有しよう'), findsOneWidget);
+    expect(find.text('岩田家'), findsNothing);
+    expect(analytics.events, contains(KatteAnalyticsEvent.groupLeft));
+  });
+
   testWidgets('Settingsに現在Groupとログアウト導線を表示する', (tester) async {
     await _pumpSignedInApp(tester);
 
@@ -345,14 +697,18 @@ void main() {
     expect(find.text('taro@example.com'), findsOneWidget);
     expect(find.text('岩田家'), findsOneWidget);
     expect(find.byKey(const Key('logout-button')), findsOneWidget);
+    expect(find.text('利用規約'), findsNothing);
+    expect(find.text('プライバシーポリシー'), findsNothing);
   });
 
   testWidgets('ログアウトするとLoginへ戻り前UserのGroupを表示しない', (tester) async {
     final notifications = FakeNotificationService();
+    final crashReporting = FakeCrashReportingService();
     await _pumpApp(
       tester,
       initialUser: testUser,
       notificationService: notifications,
+      crashReportingService: crashReporting,
     );
     await tester.tap(find.text('設定'));
     await tester.pumpAndSettle();
@@ -365,6 +721,8 @@ void main() {
     expect(find.text('Googleで続ける'), findsOneWidget);
     expect(find.text('岩田家'), findsNothing);
     expect(notifications.unregisteredUserIds, [testUser.uid]);
+    expect(crashReporting.userIdentifiers, contains(testUser.uid));
+    expect(crashReporting.userIdentifiers.last, isNull);
   });
 
   testWidgets('通知タップ時は既存Routingに従ってShoppingへ戻る', (tester) async {
@@ -400,6 +758,10 @@ void main() {
       itemsByGroup: {
         secondGroup.id: [_item(id: 'soap', name: '洗剤')],
       },
+      suggestionsByGroup: {
+        testGroup.id: [_suggestion(name: '牛乳')],
+        secondGroup.id: [_suggestion(name: '洗剤')],
+      },
     );
     await _pumpApp(
       tester,
@@ -409,6 +771,14 @@ void main() {
     );
 
     expect(find.text('牛乳'), findsOneWidget);
+    await tester.ensureVisible(
+      find.byKey(const Key('open-add-item-sheet-button')),
+    );
+    await tester.tap(find.byKey(const Key('open-add-item-sheet-button')));
+    await tester.pumpAndSettle();
+    expect(_suggestionFinder('牛乳'), findsOneWidget);
+    await tester.tapAt(const Offset(8, 8));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('group-switch-button')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('select-group-group-parents')));
@@ -416,8 +786,24 @@ void main() {
 
     expect(find.text('洗剤'), findsOneWidget);
     expect(find.text('牛乳'), findsNothing);
+    await tester.ensureVisible(
+      find.byKey(const Key('open-add-item-sheet-button')),
+    );
+    await tester.tap(find.byKey(const Key('open-add-item-sheet-button')));
+    await tester.pumpAndSettle();
+    expect(_suggestionFinder('洗剤'), findsOneWidget);
+    expect(_suggestionFinder('牛乳'), findsNothing);
     expect(shoppingRepository.watchedGroupIds, contains(secondGroup.id));
+    expect(shoppingRepository.fetchedSuggestionGroupIds, [
+      testGroup.id,
+      secondGroup.id,
+    ]);
   });
+}
+
+Finder _suggestionFinder(String name) {
+  final id = itemSuggestionDocumentId(normalizeSuggestionName(name));
+  return find.byKey(Key('item-suggestion-$id'));
 }
 
 Future<FakeAuthService> _pumpApp(
@@ -428,6 +814,8 @@ Future<FakeAuthService> _pumpApp(
   GroupRepository? groupRepository,
   ShoppingRepository? shoppingRepository,
   NotificationService? notificationService,
+  AnalyticsService? analyticsService,
+  CrashReportingService? crashReportingService,
 }) async {
   final authService = FakeAuthService(initialUser);
   final groups =
@@ -437,6 +825,8 @@ Future<FakeAuthService> _pumpApp(
       shoppingRepository ??
       FakeShoppingRepository(initialItems ?? _defaultItems());
   final notifications = notificationService ?? FakeNotificationService();
+  final analytics = analyticsService ?? FakeAnalyticsService();
+  final crashReporting = crashReportingService ?? FakeCrashReportingService();
   addTearDown(authService.dispose);
   if (groups is FakeGroupRepository) {
     addTearDown(groups.dispose);
@@ -454,12 +844,35 @@ Future<FakeAuthService> _pumpApp(
         groupRepositoryProvider.overrideWithValue(groups),
         shoppingRepositoryProvider.overrideWithValue(shopping),
         notificationServiceProvider.overrideWithValue(notifications),
+        analyticsServiceProvider.overrideWithValue(analytics),
+        crashReportingServiceProvider.overrideWithValue(crashReporting),
       ],
       child: const KatteApp(),
     ),
   );
   await tester.pumpAndSettle();
   return authService;
+}
+
+class FakeAnalyticsService implements AnalyticsService {
+  final List<KatteAnalyticsEvent> events = [];
+
+  @override
+  final NavigatorObserver navigatorObserver = NavigatorObserver();
+
+  @override
+  Future<void> log(KatteAnalyticsEvent event) async {
+    events.add(event);
+  }
+}
+
+class FakeCrashReportingService implements CrashReportingService {
+  final List<String?> userIdentifiers = [];
+
+  @override
+  Future<void> setUserIdentifier(String? userId) async {
+    userIdentifiers.add(userId);
+  }
 }
 
 Future<FakeAuthService> _pumpSignedInApp(WidgetTester tester) {
@@ -492,6 +905,17 @@ class FakeAuthService implements AuthService {
   void dispose() => _controller.close();
 }
 
+class PendingAuthService implements AuthService {
+  @override
+  Stream<AuthUser?> authStateChanges() => const Stream.empty();
+
+  @override
+  Future<void> signInWithGoogle() async {}
+
+  @override
+  Future<void> signOut() async {}
+}
+
 class FakeNotificationService implements NotificationService {
   final _tapController = StreamController<void>.broadcast();
   final List<String> registeredUserIds = [];
@@ -517,13 +941,21 @@ class FakeNotificationService implements NotificationService {
 }
 
 class FakeGroupRepository implements GroupRepository {
-  FakeGroupRepository(List<KatteGroup> groups) : _groups = [...groups];
+  FakeGroupRepository(
+    List<KatteGroup> groups, {
+    this.currentUserRole = GroupMemberRole.owner,
+    this.failRemoval = false,
+  }) : _groups = [...groups];
 
   final _controller = StreamController<List<KatteGroup>>.broadcast();
   List<KatteGroup> _groups;
   var ensureUserCount = 0;
   String? createdBy;
   String? lastJoinedCode;
+  final GroupMemberRole currentUserRole;
+  final bool failRemoval;
+  String? deletedGroupId;
+  String? leftGroupId;
 
   @override
   Future<void> ensureUser(AuthUser user) async {
@@ -570,14 +1002,37 @@ class FakeGroupRepository implements GroupRepository {
 
   @override
   Stream<List<GroupMember>> watchMembers(String groupId) {
-    return Stream.value(const [
+    return Stream.value([
       GroupMember(
         userId: 'test-user',
         displayName: 'テスト太郎',
         photoUrl: null,
-        role: GroupMemberRole.owner,
+        role: currentUserRole,
       ),
     ]);
+  }
+
+  @override
+  Future<void> deleteGroup({required String groupId}) async {
+    if (failRemoval) {
+      throw FirebaseException(plugin: 'cloud_functions', code: 'internal');
+    }
+    deletedGroupId = groupId;
+    _groups = _groups.where((group) => group.id != groupId).toList();
+    _controller.add(List.unmodifiable(_groups));
+  }
+
+  @override
+  Future<void> leaveGroup({
+    required String groupId,
+    required AuthUser user,
+  }) async {
+    if (failRemoval) {
+      throw FirebaseException(plugin: 'cloud_firestore', code: 'unavailable');
+    }
+    leftGroupId = groupId;
+    _groups = _groups.where((group) => group.id != groupId).toList();
+    _controller.add(List.unmodifiable(_groups));
   }
 
   void dispose() => _controller.close();
@@ -587,17 +1042,26 @@ class FakeShoppingRepository implements ShoppingRepository {
   FakeShoppingRepository(
     List<ShoppingItem> initialItems, {
     Map<String, List<ShoppingItem>>? itemsByGroup,
+    Map<String, List<ItemSuggestion>>? suggestionsByGroup,
+    this.failSuggestions = false,
     this.purchaseCompletion,
   }) : _itemsByGroup = {
          testGroup.id: [...initialItems],
          for (final entry in (itemsByGroup ?? {}).entries)
            entry.key: [...entry.value],
+       },
+       _suggestionsByGroup = {
+         for (final entry in (suggestionsByGroup ?? {}).entries)
+           entry.key: [...entry.value],
        };
 
   final _controller = StreamController<String>.broadcast();
   final Map<String, List<ShoppingItem>> _itemsByGroup;
+  final Map<String, List<ItemSuggestion>> _suggestionsByGroup;
+  final bool failSuggestions;
   final Completer<void>? purchaseCompletion;
   final List<String> watchedGroupIds = [];
+  final List<String> fetchedSuggestionGroupIds = [];
   var _nextId = 1;
   String? lastWrittenGroupId;
 
@@ -620,6 +1084,15 @@ class FakeShoppingRepository implements ShoppingRepository {
   }
 
   @override
+  Future<List<ItemSuggestion>> fetchItemSuggestions(String groupId) async {
+    fetchedSuggestionGroupIds.add(groupId);
+    if (failSuggestions) {
+      throw FirebaseException(plugin: 'cloud_firestore', code: 'unavailable');
+    }
+    return List.unmodifiable(_suggestionsByGroup[groupId] ?? const []);
+  }
+
+  @override
   Future<void> addItem({
     required String groupId,
     required AuthUser user,
@@ -628,6 +1101,7 @@ class FakeShoppingRepository implements ShoppingRepository {
     required String note,
   }) async {
     lastWrittenGroupId = groupId;
+    final now = DateTime.now();
     final items = _itemsByGroup.putIfAbsent(groupId, () => []);
     items.insert(
       0,
@@ -639,14 +1113,40 @@ class FakeShoppingRepository implements ShoppingRepository {
         status: ShoppingItemStatus.pending,
         createdBy: user.uid,
         createdByName: user.displayName ?? fallbackUserDisplayName,
-        createdAt: DateTime.now(),
+        createdAt: now,
         purchasedBy: null,
         purchasedByName: null,
         purchasedAt: null,
-        updatedAt: DateTime.now(),
+        updatedAt: now,
       ),
     );
+    final normalizedName = normalizeSuggestionName(name);
+    final suggestionId = itemSuggestionDocumentId(normalizedName);
+    final suggestions = _suggestionsByGroup.putIfAbsent(groupId, () => []);
+    final currentIndex = suggestions.indexWhere(
+      (suggestion) => suggestion.id == suggestionId,
+    );
+    final current = currentIndex < 0 ? null : suggestions[currentIndex];
+    final updated = ItemSuggestion(
+      id: suggestionId,
+      name: name.trim(),
+      normalizedName: normalizedName,
+      useCount: (current?.useCount ?? 0) + 1,
+      lastUsedAt: now,
+    );
+    if (currentIndex < 0) {
+      suggestions.add(updated);
+    } else {
+      suggestions[currentIndex] = updated;
+    }
     _controller.add(groupId);
+  }
+
+  ItemSuggestion? suggestion(String groupId, String name) {
+    final id = itemSuggestionDocumentId(normalizeSuggestionName(name));
+    return (_suggestionsByGroup[groupId] ?? const [])
+        .where((suggestion) => suggestion.id == id)
+        .firstOrNull;
   }
 
   @override
@@ -739,6 +1239,14 @@ class PermissionDeniedShoppingRepository implements ShoppingRepository {
   }
 
   @override
+  Future<List<ItemSuggestion>> fetchItemSuggestions(String groupId) async {
+    throw FirebaseException(
+      plugin: 'cloud_firestore',
+      code: 'permission-denied',
+    );
+  }
+
+  @override
   Future<void> addItem({
     required String groupId,
     required AuthUser user,
@@ -760,6 +1268,21 @@ class PermissionDeniedShoppingRepository implements ShoppingRepository {
     required String groupId,
     required String itemId,
   }) async {}
+}
+
+ItemSuggestion _suggestion({
+  required String name,
+  int useCount = 1,
+  DateTime? lastUsedAt,
+}) {
+  final normalizedName = normalizeSuggestionName(name);
+  return ItemSuggestion(
+    id: itemSuggestionDocumentId(normalizedName),
+    name: name,
+    normalizedName: normalizedName,
+    useCount: useCount,
+    lastUsedAt: lastUsedAt ?? DateTime.now(),
+  );
 }
 
 List<ShoppingItem> _defaultItems() {

@@ -3,6 +3,14 @@
 *.log
 *.pyc
 *.swp
+.env
+.env.*
+!.env.example
+*.p8
+*.pem
+*.key
+**/service-account*.json
+**/*firebase-adminsdk*.json
 .DS_Store
 .atom/
 .build/

@@ -18,6 +18,9 @@ Katte は、家族や同居人など複数人で買い物リストをリアル�
 - [ui-spec.md](./ui-spec.md)  
   主要画面、画面遷移、UI/UX方針
 
+- [phase7-review.md](./phase7-review.md)
+  Monitoring、Security Review、Manual Validation、Technical Debt
+
 ## Product Concept
 
 > 家族の「買っといて」を、リアルタイムで共有。

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../auth/application/auth_service.dart';
+import 'models/item_suggestion.dart';
 import 'models/shopping_item.dart';
 
 const fallbackUserDisplayName = 'ユーザー';
@@ -9,6 +10,8 @@ abstract interface class ShoppingRepository {
   Stream<List<ShoppingItem>> watchPendingItems(String groupId);
 
   Stream<List<ShoppingItem>> watchPurchasedItems(String groupId);
+
+  Future<List<ItemSuggestion>> fetchItemSuggestions(String groupId);
 
   Future<void> addItem({
     required String groupId,
@@ -38,6 +41,15 @@ class FirestoreShoppingRepository implements ShoppingRepository {
     return _firestore.collection('groups').doc(groupId).collection('items');
   }
 
+  CollectionReference<Map<String, dynamic>> _suggestionsCollection(
+    String groupId,
+  ) {
+    return _firestore
+        .collection('groups')
+        .doc(groupId)
+        .collection('itemSuggestions');
+  }
+
   @override
   Stream<List<ShoppingItem>> watchPendingItems(String groupId) {
     return _watchItems(
@@ -53,23 +65,37 @@ class FirestoreShoppingRepository implements ShoppingRepository {
       groupId: groupId,
       status: ShoppingItemStatus.purchased,
       orderBy: 'purchasedAt',
+      limit: 100,
     );
+  }
+
+  @override
+  Future<List<ItemSuggestion>> fetchItemSuggestions(String groupId) async {
+    final snapshot = await _suggestionsCollection(groupId)
+        .orderBy('lastUsedAt', descending: true)
+        .limit(30)
+        .get();
+    return snapshot.docs
+        .map(ItemSuggestion.fromFirestore)
+        .toList(growable: false);
   }
 
   Stream<List<ShoppingItem>> _watchItems({
     required String groupId,
     required ShoppingItemStatus status,
     required String orderBy,
+    int? limit,
   }) {
-    return _itemsCollection(groupId)
+    var query = _itemsCollection(groupId)
         .where('status', isEqualTo: status.name)
-        .orderBy(orderBy, descending: true)
-        .snapshots()
-        .map(
-          (snapshot) => snapshot.docs
-              .map(ShoppingItem.fromFirestore)
-              .toList(growable: false),
-        );
+        .orderBy(orderBy, descending: true);
+    if (limit != null) {
+      query = query.limit(limit);
+    }
+    return query.snapshots().map(
+      (snapshot) =>
+          snapshot.docs.map(ShoppingItem.fromFirestore).toList(growable: false),
+    );
   }
 
   @override
@@ -80,9 +106,11 @@ class FirestoreShoppingRepository implements ShoppingRepository {
     required int quantity,
     required String note,
   }) async {
+    final displayName = name.trim();
+    final normalizedName = normalizeSuggestionName(displayName);
     final item = ShoppingItem(
       id: '',
-      name: name,
+      name: displayName,
       quantity: quantity,
       note: note,
       status: ShoppingItemStatus.pending,
@@ -97,7 +125,19 @@ class FirestoreShoppingRepository implements ShoppingRepository {
     final data = item.toFirestore()
       ..['createdAt'] = FieldValue.serverTimestamp()
       ..['updatedAt'] = FieldValue.serverTimestamp();
-    await _itemsCollection(groupId).add(data);
+    final itemReference = _itemsCollection(groupId).doc();
+    final suggestionReference = _suggestionsCollection(groupId)
+        .doc(itemSuggestionDocumentId(normalizedName));
+    final batch = _firestore.batch()
+      ..set(itemReference, data)
+      ..set(suggestionReference, {
+        'name': displayName,
+        'normalizedName': normalizedName,
+        'useCount': FieldValue.increment(1),
+        'lastUsedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    await batch.commit();
   }
 
   @override

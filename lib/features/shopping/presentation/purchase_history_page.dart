@@ -33,22 +33,57 @@ class PurchaseHistoryPage extends ConsumerWidget {
   }
 }
 
-class _HistoryItemTile extends ConsumerWidget {
+class _HistoryItemTile extends ConsumerStatefulWidget {
   const _HistoryItemTile({required this.item});
 
   final ShoppingItem item;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_HistoryItemTile> createState() => _HistoryItemTileState();
+}
+
+class _HistoryItemTileState extends ConsumerState<_HistoryItemTile> {
+  var _isUpdating = false;
+
+  Future<void> _restore() async {
+    if (_isUpdating) {
+      return;
+    }
+    setState(() => _isUpdating = true);
+    final succeeded = await ref
+        .read(shoppingControllerProvider.notifier)
+        .setPurchased(itemId: widget.item.id, isPurchased: false);
+    if (!mounted) {
+      return;
+    }
+    setState(() => _isUpdating = false);
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            succeeded
+                ? '${widget.item.name}を買い物リストに戻しました'
+                : '未購入に戻せませんでした。もう一度お試しください。',
+          ),
+        ),
+      );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
     final quantity = item.quantity == 1 ? '' : ' ×${item.quantity}';
     final purchaser = item.purchasedByName ?? fallbackUserDisplayName;
-    final isUpdating = ref.watch(shoppingControllerProvider).isLoading;
 
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(vertical: 4),
       leading: const Icon(Icons.check_circle_outline),
       title: Text(
         '${item.name}$quantity',
+        maxLines: 3,
+        overflow: TextOverflow.ellipsis,
         style: Theme.of(context).textTheme.titleMedium,
       ),
       subtitle: Text(
@@ -59,26 +94,12 @@ class _HistoryItemTile extends ConsumerWidget {
       trailing: PopupMenuButton<_HistoryAction>(
         key: Key('history-menu-${item.id}'),
         tooltip: '商品メニュー',
-        enabled: !isUpdating,
+        enabled: !_isUpdating,
         onSelected: (action) async {
           if (action != _HistoryAction.restoreToPending) {
             return;
           }
-          final succeeded = await ref
-              .read(shoppingControllerProvider.notifier)
-              .setPurchased(itemId: item.id, isPurchased: false);
-          if (!context.mounted) {
-            return;
-          }
-          final messenger = ScaffoldMessenger.of(context);
-          messenger.hideCurrentSnackBar();
-          messenger.showSnackBar(
-            SnackBar(
-              content: Text(
-                succeeded ? '${item.name}を買い物リストに戻しました' : '未購入に戻せませんでした',
-              ),
-            ),
-          );
+          await _restore();
         },
         itemBuilder: (context) => const [
           PopupMenuItem(
@@ -125,7 +146,16 @@ String _formatPurchasedAt(DateTime? purchasedAt) {
       local.year == now.year &&
       local.month == now.month &&
       local.day == now.day;
-  final date = isToday ? '今日' : '${local.month}/${local.day}';
+  final yesterday = now.subtract(const Duration(days: 1));
+  final isYesterday =
+      local.year == yesterday.year &&
+      local.month == yesterday.month &&
+      local.day == yesterday.day;
+  final date = isToday
+      ? '今日'
+      : isYesterday
+      ? '昨日'
+      : '${local.month}/${local.day}';
   final hour = local.hour.toString().padLeft(2, '0');
   final minute = local.minute.toString().padLeft(2, '0');
   return '$date $hour:$minute';

@@ -5,6 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../auth/application/auth_providers.dart';
 import '../auth/application/auth_service.dart';
 import '../groups/group_providers.dart';
+import '../monitoring/monitoring_providers.dart';
+import '../monitoring/monitoring_services.dart';
+import 'models/item_suggestion.dart';
 import 'models/shopping_item.dart';
 import 'shopping_repository.dart';
 
@@ -46,6 +49,23 @@ final purchasedShoppingItemsProvider = StreamProvider<List<ShoppingItem>>((
   }
 }, retry: (_, _) => null);
 
+final itemSuggestionsProvider =
+    FutureProvider.autoDispose<List<ItemSuggestion>>((ref) async {
+      final group = ref.watch(currentGroupProvider);
+      if (ref.watch(authStateProvider).value == null || group == null) {
+        return const [];
+      }
+
+      try {
+        return await ref
+            .watch(shoppingRepositoryProvider)
+            .fetchItemSuggestions(group.id);
+      } on Object catch (error, stackTrace) {
+        _logLoadError('Item suggestions', error, stackTrace);
+        return const [];
+      }
+    });
+
 void _logLoadError(String source, Object error, StackTrace stackTrace) {
   debugPrint('$source load failed: $error\n$stackTrace');
 }
@@ -79,7 +99,7 @@ class ShoppingController extends Notifier<AsyncValue<void>> {
     required String name,
     required int quantity,
     required String note,
-  }) {
+  }) async {
     return _run(
       (repository, user) => repository.addItem(
         groupId: _currentGroupId(),
@@ -88,6 +108,7 @@ class ShoppingController extends Notifier<AsyncValue<void>> {
         quantity: quantity,
         note: note,
       ),
+      successEvent: KatteAnalyticsEvent.shoppingItemAdded,
     );
   }
 
@@ -102,6 +123,9 @@ class ShoppingController extends Notifier<AsyncValue<void>> {
         itemId: itemId,
         isPurchased: isPurchased,
       ),
+      successEvent: isPurchased
+          ? KatteAnalyticsEvent.shoppingItemPurchased
+          : KatteAnalyticsEvent.shoppingItemUndo,
     );
   }
 
@@ -121,8 +145,10 @@ class ShoppingController extends Notifier<AsyncValue<void>> {
   }
 
   Future<bool> _run(
-    Future<void> Function(ShoppingRepository repository, AuthUser user) action,
-  ) async {
+    Future<void> Function(ShoppingRepository repository, AuthUser user)
+    action, {
+    KatteAnalyticsEvent? successEvent,
+  }) async {
     final user = ref.read(authStateProvider).value;
     if (user == null) {
       state = AsyncError(
@@ -135,6 +161,9 @@ class ShoppingController extends Notifier<AsyncValue<void>> {
     state = const AsyncLoading();
     try {
       await action(ref.read(shoppingRepositoryProvider), user);
+      if (successEvent != null) {
+        await ref.read(analyticsServiceProvider).log(successEvent);
+      }
       state = const AsyncData(null);
       return true;
     } on Object catch (error, stackTrace) {

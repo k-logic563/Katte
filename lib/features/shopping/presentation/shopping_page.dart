@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../groups/group_providers.dart';
 import '../../groups/models/katte_group.dart';
+import '../models/item_suggestion.dart';
 import '../models/shopping_item.dart';
 import '../shopping_providers.dart';
 import '../shopping_repository.dart';
@@ -117,7 +118,7 @@ class ShoppingPage extends ConsumerWidget {
   List<Widget> _buildItemList({
     required List<ShoppingItem> items,
     required VoidCallback onAdd,
-    required ValueChanged<ShoppingItem> onPurchase,
+    required Future<void> Function(ShoppingItem) onPurchase,
   }) {
     if (items.isEmpty) {
       return [_EmptyState(onAdd: onAdd)];
@@ -191,15 +192,33 @@ class ShoppingPage extends ConsumerWidget {
   }
 }
 
-class _ShoppingItemTile extends ConsumerWidget {
+class _ShoppingItemTile extends StatefulWidget {
   const _ShoppingItemTile({required this.item, required this.onPurchase});
 
   final ShoppingItem item;
-  final VoidCallback onPurchase;
+  final Future<void> Function() onPurchase;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final isUpdating = ref.watch(shoppingControllerProvider).isLoading;
+  State<_ShoppingItemTile> createState() => _ShoppingItemTileState();
+}
+
+class _ShoppingItemTileState extends State<_ShoppingItemTile> {
+  var _isUpdating = false;
+
+  Future<void> _purchase() async {
+    if (_isUpdating) {
+      return;
+    }
+    setState(() => _isUpdating = true);
+    await widget.onPurchase();
+    if (mounted) {
+      setState(() => _isUpdating = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
     final quantity = item.quantity == 1 ? '' : ' ×${item.quantity}';
     final detail = item.isPurchased
         ? '${item.createdByName} → ${item.purchasedByName ?? fallbackUserDisplayName}が購入'
@@ -212,15 +231,20 @@ class _ShoppingItemTile extends ConsumerWidget {
         key: Key('purchase-${item.id}'),
         controlAffinity: ListTileControlAffinity.leading,
         value: item.isPurchased,
-        onChanged: isUpdating ? null : (_) => onPurchase(),
+        onChanged: _isUpdating ? null : (_) => _purchase(),
+        contentPadding: const EdgeInsets.fromLTRB(12, 6, 16, 6),
         title: Text(
           '${item.name}$quantity',
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
             decoration: item.isPurchased ? TextDecoration.lineThrough : null,
           ),
         ),
         subtitle: Text(
           details.join('\n'),
+          maxLines: item.note.isEmpty ? 1 : 3,
+          overflow: TextOverflow.ellipsis,
           style: Theme.of(context).textTheme.bodySmall
               ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
         ),
@@ -331,84 +355,122 @@ class _AddItemSheetState extends ConsumerState<_AddItemSheet> {
   @override
   Widget build(BuildContext context) {
     final isSaving = ref.watch(shoppingControllerProvider).isLoading;
-    return SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(
-        24,
-        24,
-        24,
-        MediaQuery.viewInsetsOf(context).bottom + 24,
-      ),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              '買ってきてほしいもの',
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-            const SizedBox(height: 20),
-            TextFormField(
-              key: const Key('item-name-field'),
-              controller: _nameController,
-              autofocus: true,
-              textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(labelText: '商品名'),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return '商品名を入力してください';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              key: const Key('item-quantity-field'),
-              controller: _quantityController,
-              keyboardType: TextInputType.number,
-              textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(labelText: '個数（任意）'),
-              validator: (value) {
-                final text = value?.trim() ?? '';
-                final quantity = int.tryParse(text);
-                if (text.isNotEmpty && (quantity == null || quantity < 1)) {
-                  return '1以上の数字を入力してください';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              key: const Key('item-note-field'),
-              controller: _noteController,
-              textInputAction: TextInputAction.done,
-              decoration: const InputDecoration(labelText: 'メモ（任意）'),
-              onFieldSubmitted: (_) {
-                if (!isSaving) {
-                  _submit();
-                }
-              },
-            ),
-            if (_errorMessage != null) ...[
-              const SizedBox(height: 12),
+    final suggestions = rankItemSuggestions(
+      ref.watch(itemSuggestionsProvider).value ?? const [],
+      _nameController.text,
+    );
+    final isSearching = _nameController.text.trim().isNotEmpty;
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(
+          24,
+          24,
+          24,
+          MediaQuery.viewInsetsOf(context).bottom + 24,
+        ),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
               Text(
-                _errorMessage!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+                '買ってきてほしいもの',
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              const SizedBox(height: 20),
+              TextFormField(
+                key: const Key('item-name-field'),
+                controller: _nameController,
+                autofocus: true,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(labelText: '商品名'),
+                onChanged: (_) => setState(() {}),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return '商品名を入力してください';
+                  }
+                  return null;
+                },
+              ),
+              if (suggestions.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text(
+                  isSearching ? '候補' : '最近使ったもの',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    for (final suggestion in suggestions)
+                      ActionChip(
+                        key: Key('item-suggestion-${suggestion.id}'),
+                        label: Text(suggestion.name),
+                        onPressed: () {
+                          _nameController.value = TextEditingValue(
+                            text: suggestion.name,
+                            selection: TextSelection.collapsed(
+                              offset: suggestion.name.length,
+                            ),
+                          );
+                          setState(() {});
+                        },
+                      ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 12),
+              TextFormField(
+                key: const Key('item-quantity-field'),
+                controller: _quantityController,
+                keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(labelText: '個数（任意）'),
+                validator: (value) {
+                  final text = value?.trim() ?? '';
+                  final quantity = int.tryParse(text);
+                  if (text.isNotEmpty && (quantity == null || quantity < 1)) {
+                    return '1以上の数字を入力してください';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                key: const Key('item-note-field'),
+                controller: _noteController,
+                textInputAction: TextInputAction.done,
+                decoration: const InputDecoration(labelText: 'メモ（任意）'),
+                onFieldSubmitted: (_) {
+                  if (!isSaving) {
+                    _submit();
+                  }
+                },
+              ),
+              if (_errorMessage != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _errorMessage!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
+              const SizedBox(height: 20),
+              FilledButton(
+                key: const Key('add-item-button'),
+                onPressed: isSaving ? null : _submit,
+                child: isSaving
+                    ? const SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('追加する'),
               ),
             ],
-            const SizedBox(height: 20),
-            FilledButton(
-              key: const Key('add-item-button'),
-              onPressed: isSaving ? null : _submit,
-              child: isSaving
-                  ? const SizedBox.square(
-                      dimension: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('追加する'),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -419,12 +481,27 @@ String _timeAgo(DateTime? createdAt) {
   if (createdAt == null) {
     return 'たった今';
   }
-  final minutes = DateTime.now().difference(createdAt).inMinutes;
+  final local = createdAt.toLocal();
+  final now = DateTime.now();
+  final difference = now.difference(local);
+  final minutes = difference.inMinutes;
   if (minutes < 1) {
     return 'たった今';
   }
   if (minutes < 60) {
     return '$minutes分前';
   }
-  return '${minutes ~/ 60}時間前';
+  if (difference.inHours < 24 && _isSameDate(local, now)) {
+    return '${difference.inHours}時間前';
+  }
+  final yesterday = now.subtract(const Duration(days: 1));
+  if (_isSameDate(local, yesterday)) {
+    return '昨日';
+  }
+  return '${local.month}/${local.day}';
 }
+
+bool _isSameDate(DateTime left, DateTime right) =>
+    left.year == right.year &&
+    left.month == right.month &&
+    left.day == right.day;

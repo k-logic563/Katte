@@ -16,7 +16,10 @@ service cloud.firestore {
     }
 
     function validMemberFields(userId) {
-      return request.resource.data.keys().hasOnly([
+      return request.resource.data.keys().hasAll([
+          'userId', 'displayName', 'role', 'joinedWithInviteCode', 'joinedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
           'userId',
           'displayName',
           'photoUrl',
@@ -26,8 +29,41 @@ service cloud.firestore {
         ])
         && request.resource.data.userId == userId
         && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() > 0
+        && request.resource.data.displayName.size() <= 100
+        && (request.resource.data.photoUrl == null || request.resource.data.photoUrl is string)
         && request.resource.data.role in ['owner', 'member']
-        && request.resource.data.joinedWithInviteCode is string;
+        && request.resource.data.joinedWithInviteCode is string
+        && request.resource.data.joinedWithInviteCode.size() >= 6
+        && request.resource.data.joinedWithInviteCode.size() <= 8
+        && request.resource.data.joinedAt is timestamp;
+    }
+
+    function validUserGroupFields(groupId) {
+      return request.resource.data.keys().hasAll(['groupId', 'role', 'joinedAt'])
+        && request.resource.data.keys().hasOnly(['groupId', 'role', 'joinedAt'])
+        && request.resource.data.groupId == groupId
+        && request.resource.data.role in ['owner', 'member']
+        && request.resource.data.joinedAt is timestamp;
+    }
+
+    function validItemSuggestionFields() {
+      return request.resource.data.keys().hasAll([
+          'name', 'normalizedName', 'useCount', 'lastUsedAt', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'name', 'normalizedName', 'useCount', 'lastUsedAt', 'updatedAt'
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 200
+        && request.resource.data.normalizedName is string
+        && request.resource.data.normalizedName.size() > 0
+        && request.resource.data.normalizedName.size() <= 200
+        && request.resource.data.useCount is int
+        && request.resource.data.useCount > 0
+        && request.resource.data.lastUsedAt is timestamp
+        && request.resource.data.updatedAt is timestamp;
     }
 
     match /users/{userId} {
@@ -45,15 +81,19 @@ service cloud.firestore {
       match /groups/{groupId} {
         allow read: if isSelf(userId);
         allow create: if isSelf(userId)
-          && request.resource.data.groupId == groupId
-          && request.resource.data.role in ['owner', 'member']
+          && validUserGroupFields(groupId)
           && existsAfter(/databases/$(database)/documents/groups/$(groupId)/members/$(userId));
-        allow update, delete: if false;
+        allow update: if false;
+        allow delete: if isSelf(userId)
+          && get(/databases/$(database)/documents/groups/$(groupId)/members/$(userId)).data.role == 'member';
       }
 
       match /devices/{deviceId} {
         allow read: if isSelf(userId);
         allow create, update: if isSelf(userId)
+          && request.resource.data.keys().hasAll([
+            'fcmToken', 'platform', 'notificationEnabled', 'createdAt', 'updatedAt'
+          ])
           && request.resource.data.keys().hasOnly([
             'fcmToken',
             'platform',
@@ -62,8 +102,11 @@ service cloud.firestore {
             'updatedAt'
           ])
           && request.resource.data.fcmToken is string
+          && request.resource.data.fcmToken.size() > 0
           && request.resource.data.platform in ['ios', 'android']
-          && request.resource.data.notificationEnabled is bool;
+          && request.resource.data.notificationEnabled is bool
+          && request.resource.data.createdAt is timestamp
+          && request.resource.data.updatedAt is timestamp;
         allow delete: if isSelf(userId);
       }
     }
@@ -72,8 +115,10 @@ service cloud.firestore {
       allow get: if signedIn();
       allow list: if false;
       allow create: if signedIn()
+        && request.resource.data.keys().hasAll(['groupId', 'createdAt'])
         && request.resource.data.keys().hasOnly(['groupId', 'createdAt'])
         && request.resource.data.groupId is string
+        && request.resource.data.createdAt is timestamp
         && getAfter(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.createdBy == request.auth.uid
         && getAfter(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.inviteCode == inviteCode;
       allow update, delete: if false;
@@ -83,12 +128,21 @@ service cloud.firestore {
       allow get: if isGroupMember(groupId);
       allow list: if false;
       allow create: if signedIn()
+        && request.resource.data.keys().hasAll([
+          'name', 'createdBy', 'inviteCode', 'createdAt', 'updatedAt'
+        ])
         && request.resource.data.keys().hasOnly([
           'name', 'createdBy', 'inviteCode', 'createdAt', 'updatedAt'
         ])
         && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 100
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.inviteCode is string
+        && request.resource.data.inviteCode.size() >= 6
+        && request.resource.data.inviteCode.size() <= 8
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp
         && existsAfter(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid))
         && getAfter(/databases/$(database)/documents/groupInvites/$(request.resource.data.inviteCode)).data.groupId == groupId;
       allow update, delete: if false;
@@ -109,12 +163,27 @@ service cloud.firestore {
               && get(/databases/$(database)/documents/groupInvites/$(request.resource.data.joinedWithInviteCode)).data.groupId == groupId
             )
           );
-        allow update, delete: if false;
+        allow update: if false;
+        allow delete: if isSelf(userId)
+          && resource.data.role == 'member';
       }
 
       match /items/{itemId} {
         allow read: if isGroupMember(groupId);
         allow create: if isGroupMember(groupId)
+          && request.resource.data.keys().hasAll([
+            'name',
+            'quantity',
+            'note',
+            'status',
+            'createdBy',
+            'createdByName',
+            'createdAt',
+            'purchasedBy',
+            'purchasedByName',
+            'purchasedAt',
+            'updatedAt'
+          ])
           && request.resource.data.keys().hasOnly([
             'name',
             'quantity',
@@ -129,15 +198,24 @@ service cloud.firestore {
             'updatedAt'
           ])
           && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 200
           && request.resource.data.quantity is int
           && request.resource.data.quantity > 0
+          && request.resource.data.note is string
+          && request.resource.data.note.size() <= 500
           && request.resource.data.status == 'pending'
           && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.createdByName is string
+          && request.resource.data.createdByName.size() > 0
+          && request.resource.data.createdAt is timestamp
           && request.resource.data.purchasedBy == null
           && request.resource.data.purchasedByName == null
-          && request.resource.data.purchasedAt == null;
+          && request.resource.data.purchasedAt == null
+          && request.resource.data.updatedAt is timestamp;
         allow update: if isGroupMember(groupId)
           && request.resource.data.createdBy == resource.data.createdBy
+          && request.resource.data.updatedAt is timestamp
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'status',
             'purchasedBy',
@@ -161,6 +239,21 @@ service cloud.firestore {
             )
           );
         allow delete: if isGroupMember(groupId);
+      }
+
+      match /itemSuggestions/{suggestionId} {
+        allow read: if isGroupMember(groupId);
+        allow create: if isGroupMember(groupId)
+          && validItemSuggestionFields()
+          && request.resource.data.useCount == 1;
+        allow update: if isGroupMember(groupId)
+          && validItemSuggestionFields()
+          && request.resource.data.normalizedName == resource.data.normalizedName
+          && request.resource.data.useCount == resource.data.useCount + 1
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'name', 'useCount', 'lastUsedAt', 'updatedAt'
+          ]);
+        allow delete: if false;
       }
     }
   }

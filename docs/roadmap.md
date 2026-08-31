@@ -168,6 +168,11 @@ Firebase ConsoleとiOS Simulatorでの実接続確認完了後にPhase 3完了�
 - Shopping / Purchase Historyを現在Group単位のsnapshot購読へ変更
 - 未所属時のGroup Setup、Member・招待コード確認画面を追加
 - 非MemberのGroup / Itemアクセスを拒否するSecurity Rulesへ強化
+- owner向けGroup削除Callable Functionを追加
+- member本人のGroup退出TransactionとSecurity Rulesを追加
+- 削除・退出後のcurrentGroupとRealtime購読のcleanupを追加
+
+owner移譲、複数owner、Memberの強制削除は未対応とする。
 
 ## Test
 
@@ -261,7 +266,7 @@ Firebase ConsoleとiOS Simulatorでの実接続確認完了後にPhase 3完了�
 
 ---
 
-# Phase 7 — Quality
+# Phase 7 — Quality, Monitoring & Security Review
 
 ## Goal
 
@@ -277,6 +282,55 @@ Firebase ConsoleとiOS Simulatorでの実接続確認完了後にPhase 3完了�
 - Security Rules Review
 - Firestore Index
 - Performance確認
+
+## Implementation Status
+
+- Crashlyticsを導入し、Releaseのみcollectionを有効化
+- Flutter error / 未処理async errorとFirebase UIDのみをCrashlyticsへ連携
+- Analyticsを中央Service経由で導入し、画面表示と主要操作をparameterなしで記録
+- Firestore Rulesの必須field・型・role改ざん防止をレビュー、強化
+- Group削除Callableと商品追加通知Functionの認証・通知対象・ログをレビュー
+- 購入履歴listenerを直近100件へ制限
+- Flutter / Functions test、dependency audit、release buildをRelease前検証として実施
+
+## Push Notification Status
+
+FCM / Cloud Functionsは実装済み。Apple Developer Program加入とAPNs設定後の
+iOS実機2ユーザー最終検証は引き続き保留する。
+
+---
+
+# Phase 7.5 — Brand Assets & App Icon Integration
+
+## Implementation Status
+
+- 正式Icon「吹き出し + チェック」とBrand Color `#3B9C8F`を確定
+- 1024×1024 Master Iconと1200×630 Thumbnailを作成
+- iOS AppIcon、Android通常／Adaptive Iconへ反映
+- Android 12対応Native Splashへ反映
+- Login画面へ控えめなブランド表示を追加
+- 表示名 `Katte` とBundle ID / Application ID `jp.katte.app`を維持
+
+iPhone実機へのDebug build・install・launchは成功済み。ホーム画面Iconと一瞬のSplashは
+人間による最終目視確認を行う。Simulatorは初回Data Migration後のXcode buildが
+環境側で待機状態になったため再確認し、AndroidはSDK導入後に端末確認する。
+
+---
+
+# Phase 7.6 — Shopping Item History Suggestions
+
+## Implementation Status
+
+- Group単位の商品名候補用 `itemSuggestions` collectionを追加
+- 商品作成と候補の更新をWriteBatchで原子的に保存
+- 最近使用した候補をBottom Sheetで最大8件表示
+- 入力中はClient側の前方一致で絞り込み、完全一致・新しさ・使用回数で順位付け
+- 候補タップは商品名だけを反映し、自動登録しない
+- 候補取得失敗時も通常の商品追加を継続可能
+- Group member限定のFirestore Security Rulesを追加
+- Group削除の既存recursive deleteで候補も削除
+
+2ユーザー実機での共有・Group切替・削除後データ確認は最終手動検証として実施する。
 
 ---
 

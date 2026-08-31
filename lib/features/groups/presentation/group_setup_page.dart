@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../group_providers.dart';
@@ -19,38 +20,47 @@ class GroupSetupPage extends ConsumerWidget {
             error: (_, _) => _GroupLoadError(
               onRetry: () => ref.invalidate(userGroupsProvider),
             ),
-            data: (_) => Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Spacer(),
-                Text(
-                  'Katte',
-                  style: Theme.of(context).textTheme.headlineMedium,
-                  textAlign: TextAlign.center,
+            data: (_) => LayoutBuilder(
+              builder: (context, constraints) => SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: IntrinsicHeight(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Spacer(),
+                        Text(
+                          'Katte',
+                          style: Theme.of(context).textTheme.headlineMedium,
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 20),
+                        Text(
+                          '家族と買い物リストを共有しよう',
+                          style: Theme.of(context).textTheme.titleMedium,
+                          textAlign: TextAlign.center,
+                        ),
+                        const Spacer(),
+                        FilledButton.icon(
+                          key: const Key('open-create-group-button'),
+                          onPressed: () => _openCreateGroupSheet(context),
+                          icon: const Icon(Icons.add),
+                          label: const Text('グループを作成'),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text('または', textAlign: TextAlign.center),
+                        const SizedBox(height: 16),
+                        OutlinedButton.icon(
+                          key: const Key('open-join-group-button'),
+                          onPressed: () => _openJoinGroupSheet(context),
+                          icon: const Icon(Icons.group_add_outlined),
+                          label: const Text('招待コードで参加'),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 20),
-                Text(
-                  '家族と買い物リストを共有しよう',
-                  style: Theme.of(context).textTheme.titleMedium,
-                  textAlign: TextAlign.center,
-                ),
-                const Spacer(),
-                FilledButton.icon(
-                  key: const Key('open-create-group-button'),
-                  onPressed: () => _openCreateGroupSheet(context),
-                  icon: const Icon(Icons.add),
-                  label: const Text('グループを作成'),
-                ),
-                const SizedBox(height: 16),
-                const Text('または', textAlign: TextAlign.center),
-                const SizedBox(height: 16),
-                OutlinedButton.icon(
-                  key: const Key('open-join-group-button'),
-                  onPressed: () => _openJoinGroupSheet(context),
-                  icon: const Icon(Icons.group_add_outlined),
-                  label: const Text('招待コードで参加'),
-                ),
-              ],
+              ),
             ),
           ),
         ),
@@ -193,10 +203,29 @@ class _JoinGroupSheetState extends ConsumerState<_JoinGroupSheet> {
         controller: _codeController,
         autofocus: true,
         textCapitalization: TextCapitalization.characters,
+        autocorrect: false,
+        enableSuggestions: false,
+        inputFormatters: [
+          FilteringTextInputFormatter.allow(RegExp('[a-zA-Z0-9]')),
+          LengthLimitingTextInputFormatter(8),
+          _UpperCaseTextFormatter(),
+        ],
         textInputAction: TextInputAction.done,
-        decoration: const InputDecoration(labelText: '招待コード'),
-        validator: (value) =>
-            value == null || value.trim().isEmpty ? '招待コードを入力してください' : null,
+        style: const TextStyle(letterSpacing: 3),
+        decoration: const InputDecoration(
+          labelText: '招待コード',
+          hintText: '6〜8文字',
+        ),
+        validator: (value) {
+          final code = value?.trim() ?? '';
+          if (code.isEmpty) {
+            return '招待コードを入力してください';
+          }
+          if (code.length < 6 || code.length > 8) {
+            return '招待コードは6〜8文字で入力してください';
+          }
+          return null;
+        },
         onFieldSubmitted: (_) {
           if (!isSaving) {
             _submit();
@@ -235,43 +264,57 @@ class _GroupForm extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(
-        24,
-        24,
-        24,
-        MediaQuery.viewInsetsOf(context).bottom + 24,
-      ),
-      child: Form(
-        key: formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(title, style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 20),
-            field,
-            if (errorMessage != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                errorMessage!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(
+          24,
+          24,
+          24,
+          MediaQuery.viewInsetsOf(context).bottom + 24,
+        ),
+        child: Form(
+          key: formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(title, style: Theme.of(context).textTheme.headlineSmall),
+              const SizedBox(height: 20),
+              field,
+              if (errorMessage != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  errorMessage!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
+              const SizedBox(height: 20),
+              FilledButton(
+                key: buttonKey,
+                onPressed: isSaving ? null : onSubmit,
+                child: isSaving
+                    ? const SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(buttonLabel),
               ),
             ],
-            const SizedBox(height: 20),
-            FilledButton(
-              key: buttonKey,
-              onPressed: isSaving ? null : onSubmit,
-              child: isSaving
-                  ? const SizedBox.square(
-                      dimension: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Text(buttonLabel),
-            ),
-          ],
+          ),
         ),
       ),
     );
+  }
+}
+
+class _UpperCaseTextFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    return newValue.copyWith(text: newValue.text.toUpperCase());
   }
 }
 
@@ -286,6 +329,8 @@ class _GroupLoadError extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         const Text('グループを読み込めませんでした。'),
+        const SizedBox(height: 4),
+        const Text('もう一度お試しください。'),
         const SizedBox(height: 16),
         OutlinedButton(onPressed: onRetry, child: const Text('再試行')),
       ],

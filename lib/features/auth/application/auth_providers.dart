@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../notifications/application/notification_service_provider.dart';
+import '../../monitoring/monitoring_providers.dart';
+import '../../monitoring/monitoring_services.dart';
 import 'auth_service.dart';
 
 final authServiceProvider = Provider<AuthService>((ref) {
@@ -19,7 +21,10 @@ class AuthController extends Notifier<AsyncValue<void>> {
   AsyncValue<void> build() => const AsyncData(null);
 
   Future<void> signInWithGoogle() {
-    return _run(ref.read(authServiceProvider).signInWithGoogle);
+    return _run(
+      ref.read(authServiceProvider).signInWithGoogle,
+      successEvent: KatteAnalyticsEvent.login,
+    );
   }
 
   Future<void> signOut() {
@@ -32,10 +37,16 @@ class AuthController extends Notifier<AsyncValue<void>> {
     });
   }
 
-  Future<void> _run(Future<void> Function() action) async {
+  Future<void> _run(
+    Future<void> Function() action, {
+    KatteAnalyticsEvent? successEvent,
+  }) async {
     state = const AsyncLoading();
     try {
       await action();
+      if (successEvent != null) {
+        await ref.read(analyticsServiceProvider).log(successEvent);
+      }
       state = const AsyncData(null);
     } on AuthCancelledException {
       state = const AsyncData(null);

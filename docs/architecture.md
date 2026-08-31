@@ -63,13 +63,18 @@ Firebase Cloud MessagingのOS通知を利用する。
 `groups/{groupId}/items/{itemId}` のonCreateを起点に、同じGroupの
 追加者以外のMemberへFirebase Admin SDKから通知する。Regionは `us-central1` とする。
 
+ownerによるGroup削除はCallable Functionで認証とowner roleを再検証してから実行する。
+Inviteを無効化し、Group配下をrecursive deleteしたうえで全MemberのUser所属参照を削除する。
+member本人の退出はFirestore transactionでMember documentとUser所属参照を同時に削除する。
+
 ### Firebase Crashlytics
 
-クラッシュ監視。
+Release buildのみcollectionを有効にし、Flutter framework errorと未処理async errorを記録する。
+ログイン中はFirebase UIDだけを調査用識別子として設定し、Logout時に消去する。
 
 ### Firebase Analytics
 
-利用状況確認。
+画面表示と既存の主要操作だけをparameterなしで記録する。
 
 ### Firebase Storage
 
@@ -179,7 +184,8 @@ owner
 member
 ```
 
-MVPではroleによる複雑な制御は行わない。
+ownerはGroup全体を削除でき、memberは本人の操作で退出できる。
+owner移譲や他Memberの削除など、roleによる高度な管理は行わない。
 
 `joinedWithInviteCode` はClientからの参加作成をSecurity Rulesで検証するために保持する。
 
@@ -233,6 +239,33 @@ Shopping画面は `status == pending`、購入履歴画面は `status == purchas
 
 Shopping / Purchase Historyのqueryは現在選択中Group IDを必ず利用する。
 Groupを切り替えるとRiverpodのStreamProviderも新しいGroupのqueryへ切り替わる。
+購入履歴のRealtime listenerは直近100件に制限し、長期利用時のread増加を抑える。
+
+## item suggestions
+
+```text
+groups/{groupId}/itemSuggestions/{suggestionId}
+
+name
+normalizedName
+useCount
+lastUsedAt
+updatedAt
+```
+
+`suggestionId` は、空白を整形して小文字化した `normalizedName` のUTF-8値を
+URL-safe Base64化した決定的なIDとする。表示用の `name` には最後に入力された表記を保持する。
+
+商品追加時はWriteBatchでitem作成とsuggestionのupsertを同時に行い、`useCount` をincrementし、
+`lastUsedAt` と `updatedAt` にserver timestampを設定する。これにより片方だけが保存される状態を防ぐ。
+
+Bottom Sheetを開いたときだけ `lastUsedAt desc`、上限30件で1回取得し、入力中の前方一致は
+Client側で処理する。表示は最大8件とし、完全一致、最終使用日時、使用回数の順に優先する。
+商品一覧を走査したり、キー入力ごとにFirestore queryを発行したりしない。
+
+Security Rulesは現在のGroup memberだけにread/create/updateを許可し、正規化キーの変更と
+不正な使用回数更新を拒否する。Group削除時はCloud Functionのrecursive deleteにより
+他のsubcollectionとともに削除され、Group退出だけでは削除されない。
 
 ---
 
@@ -415,6 +448,10 @@ firebase_analytics:
 
 flutter_riverpod:
 go_router:
+
+# build-time brand asset generation only
+flutter_launcher_icons:
+flutter_native_splash:
 ```
 
 必要になってから追加：
@@ -426,6 +463,16 @@ json_serializable:
 ```
 
 未経験の段階で依存パッケージを増やしすぎない。
+
+Brand source assetsは `assets/branding/` に集約する。Launcher IconとNative Splashは
+`pubspec.yaml` の設定を正とし、次のコマンドでiOS / Android向けAssetを再生成する。
+
+```bash
+dart run flutter_launcher_icons
+dart run flutter_native_splash:create
+```
+
+アプリ実行時に読むBrand AssetはLoginで使う `app_icon.png` のみとする。
 
 ---
 
