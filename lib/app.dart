@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'features/groups/group_providers.dart';
 import 'features/notifications/application/notification_providers.dart';
 import 'features/monitoring/monitoring_providers.dart';
 import 'router/app_router.dart';
@@ -15,7 +16,13 @@ class KatteApp extends ConsumerWidget {
     ref.watch(crashUserSyncProvider);
     ref.watch(notificationRegistrationProvider);
     ref.listen(notificationTapProvider, (previous, next) {
-      next.whenData((_) => router.go('/shopping'));
+      next.whenData((tap) {
+        final groupId = tap.groupId;
+        if (groupId != null) {
+          ref.read(currentGroupIdProvider.notifier).select(groupId);
+        }
+        router.go('/shopping');
+      });
     });
 
     return MaterialApp.router(
@@ -48,9 +55,12 @@ ThemeData _buildTheme(Brightness brightness) {
     ),
     snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
   );
-  final textTheme = GoogleFonts.notoSansJpTextTheme(baseTheme.textTheme);
+  final textTheme = GoogleFonts.zenKakuGothicNewTextTheme(baseTheme.textTheme);
 
   return baseTheme.copyWith(
+    primaryTextTheme: GoogleFonts.zenKakuGothicNewTextTheme(
+      baseTheme.primaryTextTheme,
+    ),
     textTheme: textTheme.copyWith(
       displaySmall: textTheme.displaySmall?.copyWith(
         fontWeight: FontWeight.w700,

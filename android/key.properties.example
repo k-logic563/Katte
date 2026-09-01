@@ -1,0 +1,6 @@
+# Copy this file to key.properties and replace every placeholder locally.
+# key.properties and keystore files are intentionally ignored by Git.
+storePassword=REPLACE_WITH_STORE_PASSWORD
+keyPassword=REPLACE_WITH_KEY_PASSWORD
+keyAlias=upload
+storeFile=REPLACE_WITH_ABSOLUTE_OR_ANDROID_RELATIVE_KEYSTORE_PATH

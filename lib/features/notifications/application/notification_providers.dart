@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/application/auth_providers.dart';
+import '../services/notification_service.dart';
 import 'notification_service_provider.dart';
 
 final notificationRegistrationProvider = FutureProvider<void>((ref) async {
@@ -16,6 +17,6 @@ final notificationRegistrationProvider = FutureProvider<void>((ref) async {
   }
 });
 
-final notificationTapProvider = StreamProvider<void>((ref) {
+final notificationTapProvider = StreamProvider<NotificationTap>((ref) {
   return ref.watch(notificationServiceProvider).notificationTaps;
 });

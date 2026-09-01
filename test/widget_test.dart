@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:katte/app.dart';
 import 'package:katte/features/auth/application/auth_providers.dart';
 import 'package:katte/features/auth/application/auth_service.dart';
@@ -35,6 +36,10 @@ const testGroup = KatteGroup(
 );
 
 void main() {
+  setUpAll(() {
+    GoogleFonts.config.allowRuntimeFetching = false;
+  });
+
   test('Analytics event名はparameterを持たない固定snake_caseである', () {
     expect(KatteAnalyticsEvent.values.map((event) => event.eventName), [
       'login',
@@ -101,7 +106,14 @@ void main() {
     await _pumpApp(tester);
 
     final app = tester.widget<MaterialApp>(find.byType(MaterialApp));
-    expect(app.theme?.textTheme.bodyMedium?.fontFamily, contains('NotoSansJP'));
+    expect(
+      app.theme?.textTheme.bodyMedium?.fontFamily,
+      contains('ZenKakuGothicNew'),
+    );
+    expect(
+      app.darkTheme?.textTheme.bodyMedium?.fontFamily,
+      contains('ZenKakuGothicNew'),
+    );
     expect(find.byKey(const Key('brand-app-icon')), findsOneWidget);
     expect(find.text('Katte'), findsOneWidget);
     expect(find.text('家族の「買っといて」を、\nリアルタイムで共有。'), findsOneWidget);
@@ -253,6 +265,20 @@ void main() {
     final name = tester.widget<Text>(find.text(longName));
     expect(name.maxLines, 3);
     expect(name.overflow, TextOverflow.ellipsis);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('小さい画面と1.3倍の文字サイズでもShopping一覧が崩れない', (tester) async {
+    tester.view.physicalSize = const Size(320, 568);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+    await _pumpSignedInApp(tester);
+
+    expect(find.text('牛乳'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -725,22 +751,30 @@ void main() {
     expect(crashReporting.userIdentifiers.last, isNull);
   });
 
-  testWidgets('通知タップ時は既存Routingに従ってShoppingへ戻る', (tester) async {
+  testWidgets('通知タップ時は対象Groupへ切り替えてShoppingへ戻る', (tester) async {
+    const targetGroup = KatteGroup(
+      id: 'group-target',
+      name: '通知先グループ',
+      createdBy: 'other-user',
+      inviteCode: 'TARGET1',
+    );
     final notifications = FakeNotificationService();
     await _pumpApp(
       tester,
       initialUser: testUser,
+      initialGroups: const [testGroup, targetGroup],
       notificationService: notifications,
     );
     await tester.tap(find.text('設定'));
     await tester.pumpAndSettle();
     expect(find.text('設定'), findsWidgets);
 
-    notifications.emitTap();
+    notifications.emitTap(groupId: targetGroup.id);
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('purchase-history-button')), findsOneWidget);
     expect(find.text('買い物'), findsOneWidget);
+    expect(find.text(targetGroup.name), findsOneWidget);
   });
 
   testWidgets('currentGroup変更時にShopping providerがGroup単位で切り替わる', (
@@ -917,12 +951,12 @@ class PendingAuthService implements AuthService {
 }
 
 class FakeNotificationService implements NotificationService {
-  final _tapController = StreamController<void>.broadcast();
+  final _tapController = StreamController<NotificationTap>.broadcast();
   final List<String> registeredUserIds = [];
   final List<String> unregisteredUserIds = [];
 
   @override
-  Stream<void> get notificationTaps => _tapController.stream;
+  Stream<NotificationTap> get notificationTaps => _tapController.stream;
 
   @override
   Future<void> registerForUser(AuthUser user) async {
@@ -934,7 +968,9 @@ class FakeNotificationService implements NotificationService {
     unregisteredUserIds.add(user.uid);
   }
 
-  void emitTap() => _tapController.add(null);
+  void emitTap({String? groupId}) {
+    _tapController.add(NotificationTap(groupId: groupId));
+  }
 
   @override
   void dispose() => _tapController.close();

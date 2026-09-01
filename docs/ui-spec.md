@@ -284,13 +284,17 @@ Undoを検討する。
 - 少しポップ
 - 子どもっぽくしすぎない
 
-タイポグラフィはNoto Sans JPをTheme全体へ適用し、次の階層を基本とする。
+Primary FontはZen Kaku Gothic Newとし、Light / Dark Theme全体へ適用する。
+Regular・Medium・Boldをアプリへ同梱し、実行時のネットワーク取得には依存しない。
+Material 3の役割差を維持し、次の階層を基本とする。
 
 - 画面タイトル: 28px / Bold
 - セクションタイトル: 18px / SemiBold
 - 商品名: 16px / Medium
 - 補助情報: 13px / Regular
 - ボタン: 16px / SemiBold
+
+招待コードもZen Kaku Gothic Newを使用し、文字間隔を広げて英数字の識別性を確保する。
 
 ## Brand Identity
 

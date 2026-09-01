@@ -223,14 +223,19 @@ owner移譲、複数owner、Memberの強制削除は未対応とする。
 - Item onCreateのTypeScript Cloud Functionと通知対象決定テストを追加
 - 追加者本人を除外し、同じGroupの通知有効DeviceだけへMulticast送信
 - 恒久的に無効なTokenのDevice document cleanupを実装
-- 通知タップ時は既存Auth routingに従いShoppingを開く
+- 通知タップ時はpayloadのGroupへ切り替え、既存Auth routingに従いShoppingを開く
+- iOS Push Notifications / Background Modes / `aps-environment`をProjectへ復旧
+- 商品追加Firestore triggerを `katte-dev-jp / us-central1`へdeploy
 
 ## Manual Setup Required
 
-- `katte-dev-jp` をBlaze planへ変更後、Functionsをdeployする
-- Apple Developerで `jp.katte.app` のPush Notificationsを有効化する
-- APNs Authentication KeyをFirebase ConsoleのCloud Messagingへ登録する
+- App Store IPAでTeam `5X4237AQY6`のDistribution profileとproduction Push entitlementを確認済み
+- Apple Developerで `jp.katte.app` のPush Notificationsが有効なことを最終確認する
+- APNs Authentication Key（`.p8` / Key ID / Team ID）をFirebase Consoleへ登録する
 - iPhone実機2台でBackground / Terminated通知と本人除外を確認する
+
+Apple / Firebase Console設定と2台実機検証が完了するまでは、Phase 5を
+`IMPLEMENTED / MANUAL VALIDATION PENDING`とする。
 
 ## Notification
 
@@ -334,6 +339,21 @@ iPhone実機へのDebug build・install・launchは成功済み。ホーム画�
 
 ---
 
+# Typography — Zen Kaku Gothic New
+
+## Implementation Status
+
+- Primary FontをNoto Sans JPからZen Kaku Gothic Newへ変更
+- Material 3のTextTheme hierarchyを維持し、Light / Dark Themeへ一括適用
+- Regular・Medium・BoldとOFLライセンスをアプリへ同梱
+- Runtime font fetchingを無効化し、オフライン表示へ対応
+- 商品名、補助情報、画面タイトル、ボタンの既存Weight hierarchyを維持
+- 小さい画面と1.3倍のSystem Text SizeをWidget Testで確認
+
+iOS / Android実機での全対象画面の最終目視確認はリリース前に実施する。
+
+---
+
 # Phase 8 — Release
 
 ## iOS
@@ -356,6 +376,10 @@ iPhone実機へのDebug build・install・launchは成功済み。ホーム画�
 - Internal Test
 - Store Listing
 - Production Release
+
+Phase 8の具体的な進捗、Store metadata、Privacy申告、署名と手動検証は
+[release-checklist.md](./release-checklist.md)で管理する。すべてのBLOCKERが解消するまで
+`Katte 1.0.0 Release Candidate`とはしない。
 
 ---
 

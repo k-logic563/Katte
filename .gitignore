@@ -9,6 +9,9 @@
 *.p8
 *.pem
 *.key
+*.jks
+*.keystore
+**/key.properties
 **/service-account*.json
 **/*firebase-adminsdk*.json
 .DS_Store

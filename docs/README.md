@@ -21,6 +21,15 @@ Katte は、家族や同居人など複数人で買い物リストをリアル�
 - [phase7-review.md](./phase7-review.md)
   Monitoring、Security Review、Manual Validation、Technical Debt
 
+- [release-checklist.md](./release-checklist.md)
+  Phase 8のRelease blocker、Store申請、TestFlight、Firebase、検証状況
+
+- [store-listing.md](./store-listing.md)
+  App Store / Google Play向け文章、Screenshot構成、Review Notes
+
+- [privacy-policy.md](./privacy-policy.md)
+  実装監査に基づくPrivacy Policy公開前ドラフト
+
 ## Product Concept
 
 > 家族の「買っといて」を、リアルタイムで共有。

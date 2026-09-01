@@ -15,13 +15,19 @@ const _deviceIdPreferenceKey = 'katte_notification_device_id';
 const _notificationChannelId = 'katte_item_updates';
 const _notificationChannelName = '商品追加';
 
+class NotificationTap {
+  const NotificationTap({this.groupId});
+
+  final String? groupId;
+}
+
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 }
 
 abstract interface class NotificationService {
-  Stream<void> get notificationTaps;
+  Stream<NotificationTap> get notificationTaps;
 
   Future<void> registerForUser(AuthUser user);
 
@@ -43,7 +49,7 @@ class FirebaseNotificationService implements NotificationService {
   final FirebaseFirestore _firestore;
   final FirebaseMessaging _messaging;
   final FlutterLocalNotificationsPlugin _localNotifications;
-  final _notificationTaps = StreamController<void>.broadcast();
+  final _notificationTaps = StreamController<NotificationTap>.broadcast();
 
   StreamSubscription<String>? _tokenRefreshSubscription;
   StreamSubscription<RemoteMessage>? _foregroundMessageSubscription;
@@ -54,7 +60,7 @@ class FirebaseNotificationService implements NotificationService {
   bool _initialMessageHandled = false;
 
   @override
-  Stream<void> get notificationTaps => _notificationTaps.stream;
+  Stream<NotificationTap> get notificationTaps => _notificationTaps.stream;
 
   @override
   Future<void> registerForUser(AuthUser user) async {
@@ -68,6 +74,11 @@ class FirebaseNotificationService implements NotificationService {
       badge: true,
       sound: true,
     );
+    if (kDebugMode) {
+      debugPrint(
+        'Notification authorization status: ${settings.authorizationStatus.name}',
+      );
+    }
     if (settings.authorizationStatus != AuthorizationStatus.authorized &&
         settings.authorizationStatus != AuthorizationStatus.provisional) {
       debugPrint('Notification permission not granted.');
@@ -114,7 +125,11 @@ class FirebaseNotificationService implements NotificationService {
       final localLaunch = await _localNotifications
           .getNotificationAppLaunchDetails();
       if (localLaunch?.didNotificationLaunchApp ?? false) {
-        _notificationTaps.add(null);
+        _notificationTaps.add(
+          NotificationTap(
+            groupId: _validGroupId(localLaunch?.notificationResponse?.payload),
+          ),
+        );
       }
     }
   }
@@ -125,7 +140,14 @@ class FirebaseNotificationService implements NotificationService {
       const retryDelay = Duration(milliseconds: 500);
       for (var attempt = 0; attempt < 10; attempt++) {
         if (await _messaging.getAPNSToken() != null) {
-          return _messaging.getToken();
+          if (kDebugMode) {
+            debugPrint('APNs token available.');
+          }
+          final token = await _messaging.getToken();
+          if (kDebugMode && token != null && token.isNotEmpty) {
+            debugPrint('FCM token available.');
+          }
+          return token;
         }
         await Future<void>.delayed(retryDelay);
       }
@@ -153,7 +175,9 @@ class FirebaseNotificationService implements NotificationService {
     );
     await _localNotifications.initialize(
       settings: settings,
-      onDidReceiveNotificationResponse: (_) => _notificationTaps.add(null),
+      onDidReceiveNotificationResponse: (response) => _notificationTaps.add(
+        NotificationTap(groupId: _validGroupId(response.payload)),
+      ),
     );
 
     const channel = AndroidNotificationChannel(
@@ -195,12 +219,21 @@ class FirebaseNotificationService implements NotificationService {
           presentSound: true,
         ),
       ),
-      payload: message.data['type'] as String?,
+      payload: _validGroupId(message.data['groupId']),
     );
   }
 
-  void _handleNotificationTap(RemoteMessage _) {
-    _notificationTaps.add(null);
+  void _handleNotificationTap(RemoteMessage message) {
+    _notificationTaps.add(
+      NotificationTap(groupId: _validGroupId(message.data['groupId'])),
+    );
+  }
+
+  String? _validGroupId(Object? value) {
+    if (value is! String || value.trim().isEmpty) {
+      return null;
+    }
+    return value.trim();
   }
 
   Future<void> _handleTokenRefresh(
@@ -232,6 +265,9 @@ class FirebaseNotificationService implements NotificationService {
       if (!snapshot.exists) 'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+    if (kDebugMode) {
+      debugPrint('FCM device registration updated.');
+    }
   }
 
   @override

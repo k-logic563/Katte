@@ -58,10 +58,22 @@ Phase 5ではログイン後に通知権限を要求し、商品追加Push通知
 Foregroundでは `flutter_local_notifications`、Background / Terminatedでは
 Firebase Cloud MessagingのOS通知を利用する。
 
+iOS RunnerはPush Notifications Capability、Background ModesのRemote notifications、
+`aps-environment` entitlementを利用する。Firebase MessagingのAppDelegate swizzlingは
+標準設定を維持し、独自のtoken転送処理は追加しない。Permissionがauthorizedまたは
+provisionalの場合だけ端末登録を行い、拒否時もアプリ本体は通常どおり利用できる。
+
+iOSではAPNs tokenを有限回だけ待ってからFCM tokenを取得し、token値自体はログへ出さない。
+登録先は本人の `users/{uid}/devices/{deviceId}` とし、refresh時に同じDocumentを更新、
+Logout時は現在端末のDocumentだけを削除する。通知tap時はdata payloadの `groupId` を選択して
+既存のShopping routeへ進み、別Groupのstateが混在しないようにする。
+
 ### Cloud Functions for Firebase
 
 `groups/{groupId}/items/{itemId}` のonCreateを起点に、同じGroupの
 追加者以外のMemberへFirebase Admin SDKから通知する。Regionは `us-central1` とする。
+Firebase Projectは `katte-dev-jp` を使用する。Firestore triggerのためFlutter側の
+Functions region指定は不要である。
 
 ownerによるGroup削除はCallable Functionで認証とowner roleを再検証してから実行する。
 Inviteを無効化し、Group配下をrecursive deleteしたうえで全MemberのUser所属参照を削除する。
