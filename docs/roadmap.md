@@ -171,6 +171,11 @@ Firebase ConsoleとiOS Simulatorでの実接続確認完了後にPhase 3完了�
 - owner向けGroup削除Callable Functionを追加
 - member本人のGroup退出TransactionとSecurity Rulesを追加
 - 削除・退出後のcurrentGroupとRealtime購読のcleanupを追加
+- Shopping上部に複数GroupのSwitcher、作成・招待参加導線を追加
+- 最後に選択したGroupをUser単位で端末保存し、無効時は所属Groupへfallback
+- Group依存ProviderをGroup ID単位のautoDispose familyへ分離し、旧データflashを防止
+- Settingsに全所属Groupと作成・招待参加の管理導線を追加
+- Group詳細を明示的なGroup IDで開き、非current Groupの管理でも選択状態を維持
 
 owner移譲、複数owner、Memberの強制削除は未対応とする。
 
@@ -230,12 +235,11 @@ owner移譲、複数owner、Memberの強制削除は未対応とする。
 ## Manual Setup Required
 
 - App Store IPAでTeam `5X4237AQY6`のDistribution profileとproduction Push entitlementを確認済み
-- Apple Developerで `jp.katte.app` のPush Notificationsが有効なことを最終確認する
-- APNs Authentication Key（`.p8` / Key ID / Team ID）をFirebase Consoleへ登録する
-- iPhone実機2台でBackground / Terminated通知と本人除外を確認する
+- Apple Developerで `jp.katte.app` のPush Notificationsを有効化済み
+- APNs Authentication KeyをFirebase Consoleへ登録済み
+- iPhone実機でFirestore → Eventarc → Functions → FCM → APNsのEnd-to-End通知を確認済み
 
-Apple / Firebase Console設定と2台実機検証が完了するまでは、Phase 5を
-`IMPLEMENTED / MANUAL VALIDATION PENDING`とする。
+Phase 5 Push Notificationは`COMPLETE`。
 
 ## Notification
 

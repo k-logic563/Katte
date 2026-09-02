@@ -4,6 +4,24 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../group_providers.dart';
 
+Future<void> showCreateGroupSheet(BuildContext context) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (_) => const _CreateGroupSheet(),
+  );
+}
+
+Future<void> showJoinGroupSheet(BuildContext context) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (_) => const _JoinGroupSheet(),
+  );
+}
+
 class GroupSetupPage extends ConsumerWidget {
   const GroupSetupPage({super.key});
 
@@ -43,7 +61,7 @@ class GroupSetupPage extends ConsumerWidget {
                         const Spacer(),
                         FilledButton.icon(
                           key: const Key('open-create-group-button'),
-                          onPressed: () => _openCreateGroupSheet(context),
+                          onPressed: () => showCreateGroupSheet(context),
                           icon: const Icon(Icons.add),
                           label: const Text('グループを作成'),
                         ),
@@ -52,7 +70,7 @@ class GroupSetupPage extends ConsumerWidget {
                         const SizedBox(height: 16),
                         OutlinedButton.icon(
                           key: const Key('open-join-group-button'),
-                          onPressed: () => _openJoinGroupSheet(context),
+                          onPressed: () => showJoinGroupSheet(context),
                           icon: const Icon(Icons.group_add_outlined),
                           label: const Text('招待コードで参加'),
                         ),
@@ -65,24 +83,6 @@ class GroupSetupPage extends ConsumerWidget {
           ),
         ),
       ),
-    );
-  }
-
-  Future<void> _openCreateGroupSheet(BuildContext context) {
-    return showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (_) => const _CreateGroupSheet(),
-    );
-  }
-
-  Future<void> _openJoinGroupSheet(BuildContext context) {
-    return showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (_) => const _JoinGroupSheet(),
     );
   }
 }

@@ -1,18 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../auth/application/auth_providers.dart';
 import '../group_providers.dart';
 import '../models/katte_group.dart';
 
 class GroupDetailsPage extends ConsumerWidget {
-  const GroupDetailsPage({super.key});
+  const GroupDetailsPage({this.groupId, super.key});
+
+  final String? groupId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final group = ref.watch(currentGroupProvider);
-    final members = ref.watch(groupMembersProvider);
+    final groups = ref.watch(userGroupsProvider).value ?? const [];
+    final group = groupId == null
+        ? ref.watch(currentGroupProvider)
+        : groups.where((candidate) => candidate.id == groupId).firstOrNull;
+    final members = group == null
+        ? const AsyncValue<List<GroupMember>>.data([])
+        : ref.watch(groupMembersByGroupProvider(group.id));
     final userId = ref.watch(authStateProvider).value?.uid;
     final currentMember = members.value
         ?.where((member) => member.userId == userId)
@@ -49,7 +57,9 @@ class GroupDetailsPage extends ConsumerWidget {
                         const Text('もう一度お試しください。'),
                         const SizedBox(height: 12),
                         OutlinedButton(
-                          onPressed: () => ref.invalidate(groupMembersProvider),
+                          onPressed: () => ref.invalidate(
+                            groupMembersByGroupProvider(group.id),
+                          ),
                           child: const Text('再試行'),
                         ),
                       ],
@@ -126,17 +136,26 @@ class GroupDetailsPage extends ConsumerWidget {
     required GroupMemberRole role,
   }) async {
     final isOwner = role == GroupMemberRole.owner;
-    await showDialog<bool>(
+    final succeeded = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => _GroupActionDialog(
         groupName: group.name,
         isOwner: isOwner,
         onConfirm: isOwner
-            ? ref.read(groupControllerProvider.notifier).deleteCurrentGroup
-            : ref.read(groupControllerProvider.notifier).leaveCurrentGroup,
+            ? () =>
+                  ref.read(groupControllerProvider.notifier).deleteGroup(group)
+            : () =>
+                  ref.read(groupControllerProvider.notifier).leaveGroup(group),
       ),
     );
+    if (succeeded == true && context.mounted) {
+      if (groupId != null) {
+        context.go('/settings');
+      } else {
+        context.go('/shopping');
+      }
+    }
   }
 }
 

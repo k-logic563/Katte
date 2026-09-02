@@ -11,6 +11,7 @@ import 'package:katte/features/auth/application/auth_service.dart';
 import 'package:katte/features/groups/group_providers.dart';
 import 'package:katte/features/groups/group_repository.dart'
     hide fallbackUserDisplayName;
+import 'package:katte/features/groups/current_group_selection_store.dart';
 import 'package:katte/features/groups/models/katte_group.dart';
 import 'package:katte/features/monitoring/monitoring_providers.dart';
 import 'package:katte/features/monitoring/monitoring_services.dart';
@@ -667,6 +668,35 @@ void main() {
     expect(analytics.events, contains(KatteAnalyticsEvent.groupDeleted));
   });
 
+  testWidgets('Group削除後は残っている別Groupへ切り替わる', (tester) async {
+    const remainingGroup = KatteGroup(
+      id: 'group-remaining',
+      name: '実家',
+      createdBy: 'test-user',
+      inviteCode: 'REMAIN2',
+    );
+    final repository = FakeGroupRepository(const [testGroup, remainingGroup]);
+    await _pumpApp(tester, initialUser: testUser, groupRepository: repository);
+
+    await tester.tap(find.byKey(const Key('group-details-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('delete-group-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('confirm-delete-group')));
+    await tester.pumpAndSettle();
+
+    expect(repository.deletedGroupId, testGroup.id);
+    expect(find.text(remainingGroup.name), findsOneWidget);
+    expect(find.byKey(const Key('group-switch-button')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('group-switch-button')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('select-group-group-iwata')), findsNothing);
+    expect(
+      find.byKey(const Key('select-group-group-remaining')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('Group削除失敗時は安全なエラーを表示して確認Dialogに留まる', (tester) async {
     final repository = FakeGroupRepository(const [
       testGroup,
@@ -727,6 +757,160 @@ void main() {
     expect(find.text('プライバシーポリシー'), findsNothing);
   });
 
+  testWidgets('Settingsは全Groupを表示し別Group詳細を開いてもcurrentGroupを変えない', (
+    tester,
+  ) async {
+    const secondGroup = KatteGroup(
+      id: 'group-settings-second',
+      name: '実家',
+      createdBy: 'test-user',
+      inviteCode: 'SECOND2',
+    );
+    const thirdGroup = KatteGroup(
+      id: 'group-settings-third',
+      name: '親戚みんなで使うとても長い旅行グループ',
+      createdBy: 'other-user',
+      inviteCode: 'THIRD22',
+    );
+    final repository = FakeGroupRepository(const [
+      testGroup,
+      secondGroup,
+      thirdGroup,
+    ]);
+    await _pumpApp(tester, initialUser: testUser, groupRepository: repository);
+
+    await tester.tap(find.text('設定'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('settings-group-group-iwata')), findsOneWidget);
+    expect(
+      find.byKey(const Key('settings-group-group-settings-second')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('settings-group-group-settings-third')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('settings-group-group-iwata')),
+        matching: find.byIcon(Icons.check_circle),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const Key('settings-group-group-settings-second')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text(secondGroup.name), findsOneWidget);
+    expect(find.text(secondGroup.inviteCode), findsOneWidget);
+    expect(repository.watchedMemberGroupIds.last, secondGroup.id);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('買い物'));
+    await tester.pumpAndSettle();
+    expect(find.text(testGroup.name), findsOneWidget);
+  });
+
+  testWidgets('SettingsからGroup作成・Invite参加して一覧へ即反映する', (tester) async {
+    const joinedGroup = KatteGroup(
+      id: 'group-settings-joined',
+      name: '旅行仲間',
+      createdBy: 'other-user',
+      inviteCode: 'TRAVEL2',
+    );
+    final repository = FakeGroupRepository(const [
+      testGroup,
+    ], joinableGroup: joinedGroup);
+    await _pumpApp(tester, initialUser: testUser, groupRepository: repository);
+    await tester.tap(find.text('設定'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('settings-create-group-button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('group-name-field')), '旅行');
+    await tester.tap(find.byKey(const Key('create-group-button')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('settings-group-created-group')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const Key('settings-join-group-button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('invite-code-field')),
+      joinedGroup.inviteCode,
+    );
+    await tester.tap(find.byKey(const Key('join-group-button')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('settings-group-group-settings-joined')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('Settingsで非current Groupを削除してもcurrentGroupを維持する', (tester) async {
+    const managedGroup = KatteGroup(
+      id: 'group-managed',
+      name: '管理対象',
+      createdBy: 'test-user',
+      inviteCode: 'MANAGE2',
+    );
+    final repository = FakeGroupRepository(const [testGroup, managedGroup]);
+    await _pumpApp(tester, initialUser: testUser, groupRepository: repository);
+    await tester.tap(find.text('設定'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('settings-group-group-managed')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('delete-group-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('confirm-delete-group')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('settings-group-group-managed')), findsNothing);
+    expect(find.byKey(const Key('settings-group-group-iwata')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('settings-group-group-iwata')),
+        matching: find.byIcon(Icons.check_circle),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('Settingsで非current Groupから退出すると一覧から消える', (tester) async {
+    const managedGroup = KatteGroup(
+      id: 'group-leave-managed',
+      name: '退出対象',
+      createdBy: 'other-user',
+      inviteCode: 'LEAVE22',
+    );
+    final repository = FakeGroupRepository(const [
+      testGroup,
+      managedGroup,
+    ], currentUserRole: GroupMemberRole.member);
+    await _pumpApp(tester, initialUser: testUser, groupRepository: repository);
+    await tester.tap(find.text('設定'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const Key('settings-group-group-leave-managed')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('leave-group-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('confirm-leave-group')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('settings-group-group-leave-managed')),
+      findsNothing,
+    );
+    expect(find.byKey(const Key('settings-group-group-iwata')), findsOneWidget);
+  });
+
   testWidgets('ログアウトするとLoginへ戻り前UserのGroupを表示しない', (tester) async {
     final notifications = FakeNotificationService();
     final crashReporting = FakeCrashReportingService();
@@ -777,6 +961,125 @@ void main() {
     expect(find.text(targetGroup.name), findsOneWidget);
   });
 
+  testWidgets('Group Switcherは所属Groupと作成・参加導線を表示する', (tester) async {
+    const parents = KatteGroup(
+      id: 'group-parents',
+      name: '実家',
+      createdBy: 'test-user',
+      inviteCode: 'PARENT2',
+    );
+    const work = KatteGroup(
+      id: 'group-work',
+      name: '仕事場',
+      createdBy: 'test-user',
+      inviteCode: 'WORK22',
+    );
+    await _pumpApp(
+      tester,
+      initialUser: testUser,
+      initialGroups: const [work, testGroup, parents],
+    );
+
+    await tester.tap(find.byKey(const Key('group-switch-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('グループを切り替え'), findsOneWidget);
+    expect(find.byKey(const Key('select-group-group-iwata')), findsOneWidget);
+    expect(find.byKey(const Key('select-group-group-parents')), findsOneWidget);
+    expect(find.byKey(const Key('select-group-group-work')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('select-group-group-work')),
+        matching: find.byIcon(Icons.check_circle),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('switcher-create-group-button')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('switcher-join-group-button')), findsOneWidget);
+  });
+
+  testWidgets('SwitcherからGroupを作成し新Groupへ切り替える', (tester) async {
+    await _pumpApp(tester, initialUser: testUser);
+
+    await tester.tap(find.byKey(const Key('group-switch-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('switcher-create-group-button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('group-name-field')), '旅行');
+    await tester.tap(find.byKey(const Key('create-group-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('旅行'), findsOneWidget);
+    expect(find.text('今日はまだ何もありません'), findsOneWidget);
+  });
+
+  testWidgets('SwitcherからInvite参加し参加Groupへ切り替える', (tester) async {
+    const joinedGroup = KatteGroup(
+      id: 'group-joined',
+      name: '親戚の家',
+      createdBy: 'other-user',
+      inviteCode: 'JOIN22',
+    );
+    final groups = FakeGroupRepository(const [
+      testGroup,
+    ], joinableGroup: joinedGroup);
+    await _pumpApp(tester, initialUser: testUser, groupRepository: groups);
+
+    await tester.tap(find.byKey(const Key('group-switch-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('switcher-join-group-button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('invite-code-field')),
+      'join22',
+    );
+    await tester.tap(find.byKey(const Key('join-group-button')));
+    await tester.pumpAndSettle();
+
+    expect(groups.lastJoinedCode, joinedGroup.inviteCode);
+    expect(find.text(joinedGroup.name), findsOneWidget);
+  });
+
+  testWidgets('参加済みGroupのInviteは重複作成せず安全なmessageを表示する', (tester) async {
+    await _pumpApp(tester, initialUser: testUser);
+
+    await tester.tap(find.byKey(const Key('group-switch-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('switcher-join-group-button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('invite-code-field')),
+      testGroup.inviteCode,
+    );
+    await tester.tap(find.byKey(const Key('join-group-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('このグループには参加済みです。'), findsOneWidget);
+  });
+
+  testWidgets('App再起動時はUserごとに最後のGroup選択を復元する', (tester) async {
+    const secondGroup = KatteGroup(
+      id: 'group-remembered',
+      name: '前回のグループ',
+      createdBy: 'test-user',
+      inviteCode: 'MEMBER2',
+    );
+    final store = InMemoryCurrentGroupSelectionStore();
+    await store.save(testUser.uid, secondGroup.id);
+
+    await _pumpApp(
+      tester,
+      initialUser: testUser,
+      initialGroups: const [testGroup, secondGroup],
+      currentGroupSelectionStore: store,
+    );
+
+    expect(find.text(secondGroup.name), findsOneWidget);
+  });
+
   testWidgets('currentGroup変更時にShopping providerがGroup単位で切り替わる', (
     tester,
   ) async {
@@ -790,7 +1093,14 @@ void main() {
     final shoppingRepository = FakeShoppingRepository(
       _defaultItems(),
       itemsByGroup: {
-        secondGroup.id: [_item(id: 'soap', name: '洗剤')],
+        secondGroup.id: [
+          _item(id: 'soap', name: '洗剤'),
+          _item(
+            id: 'parents-history',
+            name: '実家履歴',
+            status: ShoppingItemStatus.purchased,
+          ),
+        ],
       },
       suggestionsByGroup: {
         testGroup.id: [_suggestion(name: '牛乳')],
@@ -816,10 +1126,28 @@ void main() {
     await tester.tap(find.byKey(const Key('group-switch-button')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('select-group-group-parents')));
+    await tester.pump();
+
+    expect(find.text('牛乳'), findsNothing);
+    await tester.pumpAndSettle();
+    expect(find.text('洗剤'), findsOneWidget);
+    expect(
+      shoppingRepository.watchedGroupIds.where((id) => id == testGroup.id),
+      hasLength(1),
+    );
+
+    await tester.tap(find.byKey(const Key('purchase-history-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('実家履歴'), findsOneWidget);
+    await tester.pageBack();
     await tester.pumpAndSettle();
 
-    expect(find.text('洗剤'), findsOneWidget);
-    expect(find.text('牛乳'), findsNothing);
+    await tester.tap(find.byKey(const Key('group-details-button')));
+    await tester.pumpAndSettle();
+    expect(groupRepository.watchedMemberGroupIds.last, secondGroup.id);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
     await tester.ensureVisible(
       find.byKey(const Key('open-add-item-sheet-button')),
     );
@@ -850,6 +1178,7 @@ Future<FakeAuthService> _pumpApp(
   NotificationService? notificationService,
   AnalyticsService? analyticsService,
   CrashReportingService? crashReportingService,
+  CurrentGroupSelectionStore? currentGroupSelectionStore,
 }) async {
   final authService = FakeAuthService(initialUser);
   final groups =
@@ -880,6 +1209,9 @@ Future<FakeAuthService> _pumpApp(
         notificationServiceProvider.overrideWithValue(notifications),
         analyticsServiceProvider.overrideWithValue(analytics),
         crashReportingServiceProvider.overrideWithValue(crashReporting),
+        currentGroupSelectionStoreProvider.overrideWithValue(
+          currentGroupSelectionStore ?? InMemoryCurrentGroupSelectionStore(),
+        ),
       ],
       child: const KatteApp(),
     ),
@@ -981,6 +1313,7 @@ class FakeGroupRepository implements GroupRepository {
     List<KatteGroup> groups, {
     this.currentUserRole = GroupMemberRole.owner,
     this.failRemoval = false,
+    this.joinableGroup,
   }) : _groups = [...groups];
 
   final _controller = StreamController<List<KatteGroup>>.broadcast();
@@ -990,6 +1323,8 @@ class FakeGroupRepository implements GroupRepository {
   String? lastJoinedCode;
   final GroupMemberRole currentUserRole;
   final bool failRemoval;
+  final KatteGroup? joinableGroup;
+  final List<String> watchedMemberGroupIds = [];
   String? deletedGroupId;
   String? leftGroupId;
 
@@ -1028,16 +1363,21 @@ class FakeGroupRepository implements GroupRepository {
   }) async {
     final normalized = inviteCode.trim().toUpperCase();
     lastJoinedCode = normalized;
-    if (normalized != testGroup.inviteCode) {
+    if (_groups.any((group) => group.inviteCode == normalized)) {
+      throw AlreadyGroupMemberException();
+    }
+    final group = joinableGroup ?? testGroup;
+    if (normalized != group.inviteCode) {
       throw GroupNotFoundException();
     }
-    _groups = [..._groups, testGroup];
+    _groups = [..._groups, group];
     _controller.add(List.unmodifiable(_groups));
-    return testGroup;
+    return group;
   }
 
   @override
   Stream<List<GroupMember>> watchMembers(String groupId) {
+    watchedMemberGroupIds.add(groupId);
     return Stream.value([
       GroupMember(
         userId: 'test-user',

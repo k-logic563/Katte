@@ -30,8 +30,8 @@ BLOCKER。全BLOCKERが解消するまでRelease Candidateとはしない。
 - [x] Google Sign-In / Auth / Firestore / FCM / Analytics / Crashlytics構成あり
 - [x] Emulator、localhost、mock、test accountのproduction混入なし
 - [ ] **MUST FIX:** `katte-dev-jp`を正式公開にも使うかProduction projectを分離するか決定
-- [ ] **BLOCKER:** APNs keyをFirebaseへ登録し、2ユーザーiPhoneでPush E2E成功
-- [ ] Artifact Registry cleanup policyをFirebase Consoleで設定
+- [x] APNs key登録と2ユーザーiPhoneでPush E2E成功
+- [x] Artifact Registry `gcf-artifacts`にFirebase管理cleanup policy設定済み（1日超を削除）
 
 ## Privacy and policy
 
@@ -140,7 +140,6 @@ keystoreと`key.properties`はcommitしない。Google Play App Signingを有効
 - Android SDK / production upload key / signed AAB
 - account deletion（in-app + Google Play Web）
 - public Privacy Policy URL / Support URL
-- APNs設定とPush E2E
 - TestFlight主要flowおよびStore Console提出物の実機・手動確認
 
 ### MUST FIX
@@ -152,7 +151,6 @@ keystoreと`key.properties`はcommitしない。Google Play App Signingを有効
 ### SHOULD FIX
 
 - Terms of Serviceの運用・法務判断
-- Artifact Registry cleanup policy
 - FunctionsのFirebase/Google依存ツリーに残る`uuid` moderate advisory（強制修正は
   firebase-admin 10系へのbreaking downgradeとなるため未適用）
 - screenshot device matrixとnetwork/upgrade coverageの拡張

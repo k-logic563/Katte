@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../auth/application/auth_service.dart';
 import '../../groups/group_providers.dart';
+import '../../groups/presentation/group_setup_page.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -18,6 +19,7 @@ class SettingsPage extends ConsumerWidget {
     };
     final email = _userEmail(user);
     final currentGroup = ref.watch(currentGroupProvider);
+    final groups = ref.watch(userGroupsProvider);
 
     ref.listen(authControllerProvider, (previous, next) {
       next.whenOrNull(
@@ -56,14 +58,88 @@ class SettingsPage extends ConsumerWidget {
         ),
         const Divider(),
         const _SectionTitle('グループ'),
+        ...groups.when(
+          skipLoadingOnReload: false,
+          skipLoadingOnRefresh: false,
+          skipError: false,
+          loading: () => const [
+            Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: SizedBox.square(
+                  dimension: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2.5),
+                ),
+              ),
+            ),
+          ],
+          error: (_, _) => [
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Column(
+                children: [
+                  const Text('グループを読み込めませんでした。'),
+                  const SizedBox(height: 12),
+                  OutlinedButton(
+                    onPressed: () => ref.invalidate(userGroupsProvider),
+                    child: const Text('再試行'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          data: (groups) {
+            final ordered = [...groups]
+              ..sort((first, second) {
+                if (first.id == currentGroup?.id) return -1;
+                if (second.id == currentGroup?.id) return 1;
+                return first.name.compareTo(second.name);
+              });
+            if (ordered.isEmpty) {
+              return const [
+                Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: Text('グループがありません'),
+                ),
+              ];
+            }
+            return [
+              for (final group in ordered)
+                ListTile(
+                  key: Key('settings-group-${group.id}'),
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    group.id == currentGroup?.id
+                        ? Icons.check_circle
+                        : Icons.group_outlined,
+                  ),
+                  title: Text(
+                    group.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: group.id == currentGroup?.id
+                      ? const Text('現在使用中')
+                      : null,
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/group-details/${group.id}'),
+                ),
+            ];
+          },
+        ),
         ListTile(
+          key: const Key('settings-create-group-button'),
           contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.group_outlined),
-          title: Text(currentGroup?.name ?? 'グループ未選択'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: currentGroup == null
-              ? null
-              : () => context.push('/group-details'),
+          leading: const Icon(Icons.add),
+          title: const Text('新しいグループを作る'),
+          onTap: () => showCreateGroupSheet(context),
+        ),
+        ListTile(
+          key: const Key('settings-join-group-button'),
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.group_add_outlined),
+          title: const Text('招待コードで参加'),
+          onTap: () => showJoinGroupSheet(context),
         ),
         const Divider(height: 32),
         const ListTile(

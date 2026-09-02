@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../groups/group_providers.dart';
-import '../../groups/models/katte_group.dart';
+import '../../groups/presentation/group_setup_page.dart';
 import '../models/item_suggestion.dart';
 import '../models/shopping_item.dart';
 import '../shopping_providers.dart';
@@ -25,7 +25,6 @@ class ShoppingPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final items = ref.watch(pendingShoppingItemsProvider);
     final group = ref.watch(currentGroupProvider);
-    final groups = ref.watch(userGroupsProvider).value ?? const [];
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
@@ -37,14 +36,14 @@ class ShoppingPage extends ConsumerWidget {
                 alignment: Alignment.centerLeft,
                 child: TextButton.icon(
                   key: const Key('group-switch-button'),
-                  onPressed: groups.isEmpty
-                      ? null
-                      : () => _openGroupSwitcher(context, ref, groups),
+                  onPressed: () => _openGroupSwitcher(context),
                   iconAlignment: IconAlignment.end,
                   icon: const Icon(Icons.arrow_drop_down),
                   label: Text(
                     group?.name ?? 'グループ',
-                    style: Theme.of(context).textTheme.headlineMedium,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleLarge,
                   ),
                 ),
               ),
@@ -73,7 +72,11 @@ class ShoppingPage extends ConsumerWidget {
           ],
           error: (_, _) => [
             _LoadError(
-              onRetry: () => ref.invalidate(pendingShoppingItemsProvider),
+              onRetry: () {
+                if (group != null) {
+                  ref.invalidate(pendingShoppingItemsByGroupProvider(group.id));
+                }
+              },
             ),
           ],
           data: (items) => _buildItemList(
@@ -86,33 +89,24 @@ class ShoppingPage extends ConsumerWidget {
     );
   }
 
-  Future<void> _openGroupSwitcher(
-    BuildContext context,
-    WidgetRef ref,
-    List<KatteGroup> groups,
-  ) {
-    return showModalBottomSheet<void>(
+  Future<void> _openGroupSwitcher(BuildContext context) async {
+    final action = await showModalBottomSheet<_GroupSwitcherAction>(
       context: context,
       useSafeArea: true,
-      builder: (context) => ListView(
-        shrinkWrap: true,
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        children: [
-          for (final group in groups)
-            ListTile(
-              key: Key('select-group-${group.id}'),
-              title: Text(group.name),
-              trailing: group.id == ref.read(currentGroupProvider)?.id
-                  ? const Icon(Icons.check)
-                  : null,
-              onTap: () {
-                ref.read(currentGroupIdProvider.notifier).select(group.id);
-                Navigator.of(context).pop();
-              },
-            ),
-        ],
-      ),
+      isScrollControlled: true,
+      builder: (_) => const _GroupSwitcherSheet(),
     );
+    if (!context.mounted) {
+      return;
+    }
+    switch (action) {
+      case _GroupSwitcherAction.create:
+        await showCreateGroupSheet(context);
+      case _GroupSwitcherAction.join:
+        await showJoinGroupSheet(context);
+      case null:
+        return;
+    }
   }
 
   List<Widget> _buildItemList({
@@ -189,6 +183,118 @@ class ShoppingPage extends ConsumerWidget {
     if (!succeeded && messenger.mounted) {
       messenger.showSnackBar(const SnackBar(content: Text('元に戻せませんでした。')));
     }
+  }
+}
+
+enum _GroupSwitcherAction { create, join }
+
+class _GroupSwitcherSheet extends ConsumerWidget {
+  const _GroupSwitcherSheet();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final groups = ref.watch(userGroupsProvider);
+    final currentGroup = ref.watch(currentGroupProvider);
+
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.55,
+      minChildSize: 0.35,
+      maxChildSize: 0.9,
+      builder: (context, scrollController) => ListView(
+        controller: scrollController,
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        children: [
+          Center(
+            child: Container(
+              width: 32,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.outlineVariant,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              'グループを切り替え',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...groups.when(
+            loading: () => const [
+              Padding(
+                padding: EdgeInsets.all(28),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            ],
+            error: (_, _) => [
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                child: Column(
+                  children: [
+                    const Text('グループを読み込めませんでした。'),
+                    const SizedBox(height: 12),
+                    OutlinedButton(
+                      onPressed: () => ref.invalidate(userGroupsProvider),
+                      child: const Text('再試行'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            data: (groups) {
+              final ordered = [...groups]
+                ..sort((first, second) {
+                  if (first.id == currentGroup?.id) return -1;
+                  if (second.id == currentGroup?.id) return 1;
+                  return first.name.compareTo(second.name);
+                });
+              return [
+                for (final group in ordered)
+                  ListTile(
+                    key: Key('select-group-${group.id}'),
+                    minTileHeight: 52,
+                    leading: Icon(
+                      group.id == currentGroup?.id
+                          ? Icons.check_circle
+                          : Icons.circle_outlined,
+                    ),
+                    title: Text(
+                      group.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    selected: group.id == currentGroup?.id,
+                    onTap: () {
+                      ref
+                          .read(currentGroupIdProvider.notifier)
+                          .select(group.id);
+                      Navigator.of(context).pop();
+                    },
+                  ),
+              ];
+            },
+          ),
+          const Divider(height: 24),
+          ListTile(
+            key: const Key('switcher-create-group-button'),
+            leading: const Icon(Icons.add),
+            title: const Text('新しいグループを作る'),
+            onTap: () => Navigator.of(context).pop(_GroupSwitcherAction.create),
+          ),
+          ListTile(
+            key: const Key('switcher-join-group-button'),
+            leading: const Icon(Icons.group_add_outlined),
+            title: const Text('招待コードで参加'),
+            onTap: () => Navigator.of(context).pop(_GroupSwitcherAction.join),
+          ),
+        ],
+      ),
+    );
   }
 }
 

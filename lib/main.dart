@@ -7,9 +7,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
 import 'firebase_options.dart';
+import 'features/groups/current_group_selection_store.dart';
+import 'features/groups/group_providers.dart';
 import 'features/notifications/services/notification_service.dart';
 
 Future<void> main() async {
@@ -28,6 +31,16 @@ Future<void> main() async {
     return true;
   };
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  final preferences = await SharedPreferences.getInstance();
 
-  runApp(const ProviderScope(child: KatteApp()));
+  runApp(
+    ProviderScope(
+      overrides: [
+        currentGroupSelectionStoreProvider.overrideWithValue(
+          SharedPreferencesCurrentGroupSelectionStore(preferences),
+        ),
+      ],
+      child: const KatteApp(),
+    ),
+  );
 }

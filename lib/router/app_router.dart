@@ -14,8 +14,6 @@ import '../features/shopping/presentation/shopping_page.dart';
 import '../shared/main_scaffold.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
-  final authState = ref.watch(authStateProvider);
-  final userGroups = ref.watch(userGroupsProvider);
   final analyticsObserver = ref
       .watch(analyticsServiceProvider)
       .navigatorObserver;
@@ -23,21 +21,24 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     initialLocation: '/loading',
     observers: [analyticsObserver],
     redirect: (context, state) {
+      final authState = ref.read(authStateProvider);
+      final userGroups = ref.read(userGroupsProvider);
       final location = state.matchedLocation;
       final isLoading = location == '/loading';
       final isLogin = location == '/login';
       final isGroupSetup = location == '/group-setup';
 
-      if (authState.isLoading) {
+      if (authState.isLoading && !authState.hasValue) {
         return isLoading ? null : '/loading';
       }
       if (authState.hasError || authState.value == null) {
         return isLogin ? null : '/login';
       }
-      if (userGroups.isLoading) {
+      if (userGroups.isLoading && !userGroups.hasValue) {
         return isLoading ? null : '/loading';
       }
-      if (userGroups.hasError || (userGroups.value?.isEmpty ?? true)) {
+      if ((userGroups.hasError && !userGroups.hasValue) ||
+          (userGroups.hasValue && (userGroups.value?.isEmpty ?? true))) {
         return isGroupSetup ? null : '/group-setup';
       }
       return (isLoading || isLogin || isGroupSetup) ? '/shopping' : null;
@@ -70,8 +71,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/group-details',
         builder: (context, state) => const GroupDetailsPage(),
       ),
+      GoRoute(
+        path: '/group-details/:groupId',
+        builder: (context, state) =>
+            GroupDetailsPage(groupId: state.pathParameters['groupId']),
+      ),
     ],
   );
+
+  ref.listen(authStateProvider, (_, _) => router.refresh());
+  ref.listen(userGroupsProvider, (_, _) => router.refresh());
 
   ref.onDispose(router.dispose);
   return router;

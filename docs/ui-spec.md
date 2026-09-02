@@ -69,6 +69,26 @@ Katte
 
 ---
 
+## 4.1 Group Switcher
+
+Shopping上部の現在Group名とchevronをタップすると、Safe Area内のBottom Sheetを表示する。
+`users/{uid}/groups`から取得済みの所属Groupだけを一覧化し、現在Groupを先頭・選択状態で示す。
+
+```text
+グループを切り替え
+
+✓ 岩田家
+  実家
+
+＋ 新しいグループを作る
+＋ 招待コードで参加
+```
+
+作成・参加は初回Group Setupと同じBottom Sheetを再利用し、成功後は対象Groupへ切り替える。
+長いGroup名は2行までとしてellipsisし、一覧取得中・失敗時はSheet内だけに状態を表示する。
+
+---
+
 # 5. Shopping List
 
 Katteのメイン画面。
@@ -78,7 +98,7 @@ Katteのメイン画面。
 Security Rules未反映などの読込失敗時もLoadingを終了し、Firebaseの詳細は画面へ表示しない。
 
 ```text
-岩田家                    [ メンバー ] [ 履歴 ]
+岩田家 ▼                  [ メンバー ] [ 履歴 ]
 
 ○ 牛乳
   由美 ・ 2分前
@@ -200,13 +220,22 @@ owner移譲・role変更・他Memberの削除は行わない。
 [ ログアウト ]
 
 グループ
-  岩田家
+  ✓ 岩田家（現在使用中）
+    実家                 ›
+    旅行                 ›
+
+  ＋ 新しいグループを作る
+  ＋ 招待コードで参加
 
 その他
   利用規約
   プライバシーポリシー
   バージョン
 ```
+
+Settingsは`userGroupsProvider`の全所属Groupを表示する管理導線とする。Group Rowを開いても
+現在Groupは切り替えず、選択したGroup IDのMembers、Invite Code、Delete / Exitを表示する。
+一覧更新後もSettingsの表示位置を維持する。使用Groupの切り替えはShopping上部のSwitcherで行う。
 
 Phase 5ではダミーの通知Toggleを置かない。ログイン後にOSの通知権限を要求し、
 許可された端末へ同じGroupの別Memberによる商品追加を通知する。

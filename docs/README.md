@@ -30,6 +30,9 @@ Katte は、家族や同居人など複数人で買い物リストをリアル�
 - [privacy-policy.md](./privacy-policy.md)
   実装監査に基づくPrivacy Policy公開前ドラフト
 
+- [firebase-cost-review.md](./firebase-cost-review.md)
+  Firestore / Functions / Eventarcのaccess、規模別Cost、abuse対策、monitoring
+
 ## Product Concept
 
 > 家族の「買っといて」を、リアルタイムで共有。

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../groups/group_providers.dart';
 import '../models/shopping_item.dart';
 import '../shopping_providers.dart';
 import '../shopping_repository.dart';
@@ -11,13 +12,18 @@ class PurchaseHistoryPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final items = ref.watch(purchasedShoppingItemsProvider);
+    final groupId = ref.watch(currentGroupProvider)?.id;
 
     return Scaffold(
       appBar: AppBar(title: const Text('購入履歴')),
       body: items.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (_, _) => _HistoryLoadError(
-          onRetry: () => ref.invalidate(purchasedShoppingItemsProvider),
+          onRetry: () {
+            if (groupId != null) {
+              ref.invalidate(purchasedShoppingItemsByGroupProvider(groupId));
+            }
+          },
         ),
         data: (items) => items.isEmpty
             ? const Center(child: Text('購入履歴はまだありません'))

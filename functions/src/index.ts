@@ -128,7 +128,6 @@ export const sendShoppingItemCreatedNotification = onDocumentCreated(
       return;
     }
 
-    logger.info("Shopping item created.", {groupId, itemId});
     const firestore = getFirestore();
     const members = await firestore
       .collection("groups")
@@ -139,11 +138,6 @@ export const sendShoppingItemCreatedNotification = onDocumentCreated(
     const recipientIds = memberIds.filter(
       (memberId) => memberId !== item.createdBy,
     );
-    logger.info("Group members found.", {
-      groupId,
-      recipientCount: recipientIds.length,
-    });
-
     const deviceSnapshots = await Promise.all(
       recipientIds.map((userId) =>
         firestore
@@ -176,10 +170,6 @@ export const sendShoppingItemCreatedNotification = onDocumentCreated(
       item.createdBy,
       registrations,
     );
-    logger.info("Notification targets resolved.", {
-      groupId,
-      targetCount: targets.length,
-    });
     if (targets.length === 0) {
       return;
     }
@@ -215,19 +205,17 @@ export const sendShoppingItemCreatedNotification = onDocumentCreated(
           invalidDevicePaths.add(chunk[index].devicePath);
         }
       });
-      logger.info("Notification multicast completed.", {
-        groupId,
-        successCount: response.successCount,
-        failureCount: response.failureCount,
-      });
     }
 
     if (invalidDevicePaths.size > 0) {
-      const batch = firestore.batch();
-      for (const path of invalidDevicePaths) {
-        batch.delete(firestore.doc(path));
+      const paths = [...invalidDevicePaths];
+      for (let offset = 0; offset < paths.length; offset += deleteBatchLimit) {
+        const batch = firestore.batch();
+        for (const path of paths.slice(offset, offset + deleteBatchLimit)) {
+          batch.delete(firestore.doc(path));
+        }
+        await batch.commit();
       }
-      await batch.commit();
       logger.info("Invalid device registrations removed.", {
         count: invalidDevicePaths.size,
       });

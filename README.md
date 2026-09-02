@@ -29,11 +29,14 @@ Push通知のClient・Cloud Functions実装とiOS Capabilityはリポジトリ�
 Apple Developerで作成したAPNs Authentication KeyをFirebase Consoleの
 Project Settings → Cloud Messaging → Apple app configurationへ登録してください。
 
-APNs設定とiPhone実機2台でのEnd-to-End確認が終わるまでは、Phase 5の状態を
-`IMPLEMENTED / MANUAL VALIDATION PENDING`とします。
+Firestore → Eventarc → Cloud Functions → FCM → APNs → iPhoneのEnd-to-End通知を
+実機で確認済みです。Push通知の状態は`COMPLETE`です。
 
 ## Release
 
 Phase 8のStore申請、署名、Privacy、TestFlightの進捗と手動作業は
 [Release Checklist](docs/release-checklist.md)を参照してください。現時点ではRelease blockerが
 残っているため、`1.0.0+1`をRelease Candidateとは判定していません。
+
+Firebase / Google Cloudの従量課金モデル、規模別概算、Budget Alertと監視方針は
+[Firebase Cost Review](docs/firebase-cost-review.md)を参照してください。

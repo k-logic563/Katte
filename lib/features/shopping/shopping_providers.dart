@@ -15,56 +15,83 @@ final shoppingRepositoryProvider = Provider<ShoppingRepository>((ref) {
   return FirestoreShoppingRepository();
 });
 
-final pendingShoppingItemsProvider = StreamProvider<List<ShoppingItem>>((
+final pendingShoppingItemsByGroupProvider = StreamProvider.autoDispose
+    .family<List<ShoppingItem>, String>((ref, groupId) async* {
+      if (ref.watch(authStateProvider).value == null) {
+        yield const [];
+        return;
+      }
+
+      try {
+        yield* ref.watch(shoppingRepositoryProvider).watchPendingItems(groupId);
+      } on Object catch (error, stackTrace) {
+        _logLoadError('Pending shopping items', error, stackTrace);
+        Error.throwWithStackTrace(_safeLoadError(error), stackTrace);
+      }
+    }, retry: (_, _) => null);
+
+final pendingShoppingItemsProvider = Provider<AsyncValue<List<ShoppingItem>>>((
   ref,
-) async* {
-  final group = ref.watch(currentGroupProvider);
-  if (ref.watch(authStateProvider).value == null || group == null) {
-    yield const [];
-    return;
+) {
+  final groupId = ref.watch(currentGroupProvider)?.id;
+  if (groupId == null) {
+    return const AsyncData([]);
   }
+  return ref.watch(pendingShoppingItemsByGroupProvider(groupId));
+});
 
-  try {
-    yield* ref.watch(shoppingRepositoryProvider).watchPendingItems(group.id);
-  } on Object catch (error, stackTrace) {
-    _logLoadError('Pending shopping items', error, stackTrace);
-    Error.throwWithStackTrace(_safeLoadError(error), stackTrace);
-  }
-}, retry: (_, _) => null);
+final purchasedShoppingItemsByGroupProvider = StreamProvider.autoDispose
+    .family<List<ShoppingItem>, String>((ref, groupId) async* {
+      if (ref.watch(authStateProvider).value == null) {
+        yield const [];
+        return;
+      }
 
-final purchasedShoppingItemsProvider = StreamProvider<List<ShoppingItem>>((
-  ref,
-) async* {
-  final group = ref.watch(currentGroupProvider);
-  if (ref.watch(authStateProvider).value == null || group == null) {
-    yield const [];
-    return;
-  }
+      try {
+        yield* ref
+            .watch(shoppingRepositoryProvider)
+            .watchPurchasedItems(groupId);
+      } on Object catch (error, stackTrace) {
+        _logLoadError('Purchased shopping items', error, stackTrace);
+        Error.throwWithStackTrace(_safeLoadError(error), stackTrace);
+      }
+    }, retry: (_, _) => null);
 
-  try {
-    yield* ref.watch(shoppingRepositoryProvider).watchPurchasedItems(group.id);
-  } on Object catch (error, stackTrace) {
-    _logLoadError('Purchased shopping items', error, stackTrace);
-    Error.throwWithStackTrace(_safeLoadError(error), stackTrace);
-  }
-}, retry: (_, _) => null);
+final purchasedShoppingItemsProvider = Provider<AsyncValue<List<ShoppingItem>>>(
+  (ref) {
+    final groupId = ref.watch(currentGroupProvider)?.id;
+    if (groupId == null) {
+      return const AsyncData([]);
+    }
+    return ref.watch(purchasedShoppingItemsByGroupProvider(groupId));
+  },
+);
 
-final itemSuggestionsProvider =
-    FutureProvider.autoDispose<List<ItemSuggestion>>((ref) async {
-      final group = ref.watch(currentGroupProvider);
-      if (ref.watch(authStateProvider).value == null || group == null) {
+final itemSuggestionsByGroupProvider = FutureProvider.autoDispose
+    .family<List<ItemSuggestion>, String>((ref, groupId) async {
+      if (ref.watch(authStateProvider).value == null) {
         return const [];
       }
 
       try {
         return await ref
             .watch(shoppingRepositoryProvider)
-            .fetchItemSuggestions(group.id);
+            .fetchItemSuggestions(groupId);
       } on Object catch (error, stackTrace) {
         _logLoadError('Item suggestions', error, stackTrace);
         return const [];
       }
     });
+
+final itemSuggestionsProvider = Provider<AsyncValue<List<ItemSuggestion>>>((
+  ref,
+) {
+  final groupId = ref.watch(currentGroupProvider)?.id;
+  if (groupId == null) {
+    return const AsyncData([]);
+  }
+  return ref.watch(itemSuggestionsByGroupProvider(groupId));
+});
 
 void _logLoadError(String source, Object error, StackTrace stackTrace) {
   debugPrint('$source load failed: $error\n$stackTrace');

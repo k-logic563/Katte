@@ -52,6 +52,11 @@ Phase 4ではユーザーが作成または招待コードで参加したGroup�
 商品の追加・購入・UndoはRiverpodの現在Groupを通じてFirestoreへ反映し、
 同じGroupの全Memberへリアルタイム同期する。
 
+所属Group一覧は`users/{uid}/groups`を起点に取得し、全`groups` collectionは列挙しない。
+現在Group IDはRiverpodで即時切り替え、端末のSharedPreferencesへUser単位で保存する。
+pending、history、suggestions、membersはGroup IDをkeyにしたautoDispose familyで購読し、
+切り替え時は新しいAsyncValueへ移ることで旧Groupの表示とlistenerを残さない。
+
 ### Firebase Cloud Messaging
 
 Phase 5ではログイン後に通知権限を要求し、商品追加Push通知を受信する。

@@ -258,9 +258,16 @@ class FirebaseNotificationService implements NotificationService {
   }) async {
     final reference = _deviceReference(userId, deviceId);
     final snapshot = await reference.get();
+    final platform = _platformName();
+    final current = snapshot.data();
+    if (current?['fcmToken'] == token &&
+        current?['platform'] == platform &&
+        current?['notificationEnabled'] == true) {
+      return;
+    }
     await reference.set({
       'fcmToken': token,
-      'platform': _platformName(),
+      'platform': platform,
       'notificationEnabled': true,
       if (!snapshot.exists) 'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),

@@ -101,8 +101,14 @@ Apple Sign InはPhase 2.5またはリリース前対応として別途検討す�
 - 招待コード確認
 - ownerによるグループ削除
 - member本人によるグループ退出
+- Shopping上部のGroup Switcherによる所属グループ切り替え
+- Group Switcherから既存の作成・招待コード参加Flowを起動
 
 owner移譲、複数owner、他メンバーの強制削除には対応しない。
+最後に選択したGroupは端末内へUser単位で保存する。削除・退出等で選択先が所属一覧に
+存在しない場合は利用可能な先頭Groupへfallbackし、所属が0件ならGroup Setupへ戻る。
+ShoppingのGroup Switcherは使用Groupの切り替え、SettingsのGroup一覧は全所属Groupの管理を
+担当する。Settingsから別Groupの詳細を開いても現在Groupは変更しない。
 
 ---
 
