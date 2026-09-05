@@ -139,6 +139,8 @@ ShoppingのGroup Switcherは使用Groupの切り替え、SettingsのGroup一覧�
 - 購入日時
 
 Shopping画面には `pending` の商品のみ表示する。
+同じグループのメンバーは、Shopping画面のメニューから `pending` 商品の
+商品名・個数・メモを編集できる。購入済みへの変更は左側のCheckboxだけで行う。
 同じグループのメンバーは、Shopping画面のメニューから確認後に `pending` 商品を削除できる。
 `purchased` の商品は削除せずFirestoreへ保持し、購入履歴画面で確認できるようにする。
 購入直後はSnackBarから直前の1件を未購入へ戻せる。

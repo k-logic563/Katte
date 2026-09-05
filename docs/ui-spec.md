@@ -146,9 +146,11 @@ Bottom Sheet例：
 
 追加後は即座に閉じる。
 
-Shopping一覧の各 `pending` 商品にはtrailing menuを表示する。「削除」を選ぶと
+Shopping一覧の各 `pending` 商品にはtrailing menuを表示し、「編集」「削除」の順に並べる。
+「編集」では追加時と同じ入力様式のBottom Sheetで商品名・個数・メモを更新する。
+購入済みへの変更は左側のCheckboxだけで行い、商品名や行全体のtapでは変更しない。「削除」を選ぶと
 「この商品を削除しますか？」という確認Dialogを表示し、確定後にDocumentを削除する。
-購入履歴の `purchased` 商品には削除導線を表示しない。
+購入履歴の `purchased` 商品には編集・削除導線を表示しない。
 
 Firestoreへの保存に失敗した場合はBottom Sheetを閉じず、入力内容を保持して簡潔なエラーを表示する。
 

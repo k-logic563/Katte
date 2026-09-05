@@ -83,11 +83,8 @@ class ShoppingPage extends ConsumerWidget {
             items: items,
             onAdd: () => _openAddItemSheet(context),
             onPurchase: (item) => _purchaseItem(context, ref, item),
-            onEdit: (item) => _openEditItemSheet(
-              context,
-              item: item,
-              groupId: group?.id,
-            ),
+            onEdit: (item) =>
+                _openEditItemSheet(context, item: item, groupId: group?.id),
             onDelete: (item) => _confirmDeleteItem(
               context,
               ref,
@@ -158,9 +155,8 @@ class ShoppingPage extends ConsumerWidget {
     required String? groupId,
   }) async {
     if (groupId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('更新できませんでした。')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('更新できませんでした。')));
       return;
     }
     await showModalBottomSheet<void>(
@@ -572,6 +568,178 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
+class _EditItemSheet extends ConsumerStatefulWidget {
+  const _EditItemSheet({required this.item, required this.groupId});
+
+  final ShoppingItem item;
+  final String groupId;
+
+  @override
+  ConsumerState<_EditItemSheet> createState() => _EditItemSheetState();
+}
+
+class _EditItemSheetState extends ConsumerState<_EditItemSheet> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _nameController;
+  late final TextEditingController _quantityController;
+  late final TextEditingController _noteController;
+  var _isSubmitting = false;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.item.name);
+    _quantityController = TextEditingController(
+      text: widget.item.quantity.toString(),
+    );
+    _noteController = TextEditingController(text: widget.item.note);
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _quantityController.dispose();
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  bool get _hasChanges {
+    final quantityText = _quantityController.text.trim();
+    final quantity = quantityText.isEmpty ? 1 : int.tryParse(quantityText);
+    return _nameController.text.trim() != widget.item.name ||
+        quantity != widget.item.quantity ||
+        _noteController.text.trim() != widget.item.note;
+  }
+
+  Future<void> _submit() async {
+    if (_isSubmitting || !_hasChanges || !_formKey.currentState!.validate()) {
+      return;
+    }
+    setState(() {
+      _isSubmitting = true;
+      _errorMessage = null;
+    });
+    final quantityText = _quantityController.text.trim();
+    final succeeded = await ref
+        .read(shoppingControllerProvider.notifier)
+        .updateItem(
+          groupId: widget.groupId,
+          itemId: widget.item.id,
+          name: _nameController.text.trim(),
+          quantity: quantityText.isEmpty ? 1 : int.parse(quantityText),
+          note: _noteController.text.trim(),
+        );
+    if (!mounted) {
+      return;
+    }
+    if (succeeded) {
+      Navigator.of(context).pop();
+      return;
+    }
+    final operationState = ref.read(shoppingControllerProvider);
+    final error = operationState.hasError ? operationState.error : null;
+    setState(() {
+      _isSubmitting = false;
+      _errorMessage = error is ShoppingOperationException
+          ? error.message
+          : '更新できませんでした。';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(
+          24,
+          24,
+          24,
+          MediaQuery.viewInsetsOf(context).bottom + 24,
+        ),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('商品を編集', style: Theme.of(context).textTheme.headlineSmall),
+              const SizedBox(height: 20),
+              TextFormField(
+                key: const Key('edit-item-name-field'),
+                controller: _nameController,
+                autofocus: true,
+                maxLength: _itemNameMaxLength,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(labelText: '商品名'),
+                onChanged: (_) => setState(() {}),
+                validator: _validateItemName,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                key: const Key('edit-item-quantity-field'),
+                controller: _quantityController,
+                keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(labelText: '個数（任意）'),
+                onChanged: (_) => setState(() {}),
+                validator: _validateOptionalItemQuantity,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                key: const Key('edit-item-note-field'),
+                controller: _noteController,
+                maxLength: _itemNoteMaxLength,
+                textInputAction: TextInputAction.done,
+                decoration: const InputDecoration(labelText: 'メモ（任意）'),
+                onChanged: (_) => setState(() {}),
+                onFieldSubmitted: (_) => _submit(),
+              ),
+              if (_errorMessage != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _errorMessage!,
+                  key: const Key('edit-item-error'),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      key: const Key('cancel-edit-item-button'),
+                      onPressed: _isSubmitting
+                          ? null
+                          : () => Navigator.of(context).pop(),
+                      child: const Text('キャンセル'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      key: const Key('save-edit-item-button'),
+                      onPressed: _isSubmitting || !_hasChanges ? null : _submit,
+                      child: _isSubmitting
+                          ? const SizedBox.square(
+                              dimension: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('保存'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _AddItemSheet extends ConsumerStatefulWidget {
   const _AddItemSheet();
 
@@ -652,15 +820,11 @@ class _AddItemSheetState extends ConsumerState<_AddItemSheet> {
                 key: const Key('item-name-field'),
                 controller: _nameController,
                 autofocus: true,
+                maxLength: _itemNameMaxLength,
                 textInputAction: TextInputAction.next,
                 decoration: const InputDecoration(labelText: '商品名'),
                 onChanged: (_) => setState(() {}),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return '商品名を入力してください';
-                  }
-                  return null;
-                },
+                validator: _validateItemName,
               ),
               if (suggestions.isNotEmpty) ...[
                 const SizedBox(height: 16),
@@ -697,19 +861,13 @@ class _AddItemSheetState extends ConsumerState<_AddItemSheet> {
                 keyboardType: TextInputType.number,
                 textInputAction: TextInputAction.next,
                 decoration: const InputDecoration(labelText: '個数（任意）'),
-                validator: (value) {
-                  final text = value?.trim() ?? '';
-                  final quantity = int.tryParse(text);
-                  if (text.isNotEmpty && (quantity == null || quantity < 1)) {
-                    return '1以上の数字を入力してください';
-                  }
-                  return null;
-                },
+                validator: _validateOptionalItemQuantity,
               ),
               const SizedBox(height: 12),
               TextFormField(
                 key: const Key('item-note-field'),
                 controller: _noteController,
+                maxLength: _itemNoteMaxLength,
                 textInputAction: TextInputAction.done,
                 decoration: const InputDecoration(labelText: 'メモ（任意）'),
                 onFieldSubmitted: (_) {
@@ -742,6 +900,33 @@ class _AddItemSheetState extends ConsumerState<_AddItemSheet> {
       ),
     );
   }
+}
+
+const _itemNameMaxLength = 200;
+const _itemNoteMaxLength = 500;
+
+String? _validateItemName(String? value) {
+  if (value == null || value.trim().isEmpty) {
+    return '商品名を入力してください';
+  }
+  return null;
+}
+
+String? _validateItemQuantity(String? value) {
+  final text = value?.trim() ?? '';
+  final quantity = int.tryParse(text);
+  if (quantity == null || quantity < 1) {
+    return '1以上の数字を入力してください';
+  }
+  return null;
+}
+
+String? _validateOptionalItemQuantity(String? value) {
+  final text = value?.trim() ?? '';
+  if (text.isEmpty) {
+    return null;
+  }
+  return _validateItemQuantity(text);
 }
 
 String _timeAgo(DateTime? createdAt) {

@@ -131,7 +131,7 @@ Firestoreへ商品を保存する。
 - 初回利用時にTransactionで開発用Groupを存在しない場合のみ作成
 - 空の `items` Collectionは事前作成せず、最初の商品追加時に自動作成
 - Firestore snapshotをRiverpod経由で一覧表示
-- 商品追加、購入済み / 未購入への更新、Repository上の削除操作をFirestore化
+- 商品追加、pending商品の編集、購入済み / 未購入への更新、Repository上の削除操作をFirestore化
 - Shopping画面は未購入商品のみ表示し、購入済み商品は履歴画面へ分離
 - 購入直後のSnackBarから直前の1件をUndo可能
 - 購入履歴の各商品メニューから未購入へ戻す操作を追加

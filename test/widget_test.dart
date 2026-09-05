@@ -555,9 +555,297 @@ void main() {
     await tester.tap(find.byKey(const Key('item-menu-milk')));
     await tester.pumpAndSettle();
 
+    expect(find.byKey(const Key('edit-shopping-item')), findsOneWidget);
     expect(find.byKey(const Key('delete-shopping-item')), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.byKey(const Key('edit-shopping-item'))).dy,
+      lessThan(
+        tester.getTopLeft(find.byKey(const Key('delete-shopping-item'))).dy,
+      ),
+    );
     expect(find.text('牛乳'), findsOneWidget);
     expect(repository.lastWrittenGroupId, isNull);
+  });
+
+  testWidgets('編集Sheetへ現在値を設定し商品名・数量・メモをRealtime更新する', (tester) async {
+    final repository = FakeShoppingRepository(_defaultItems());
+    final original = repository.item(testGroup.id, 'eggs')!;
+    await _pumpApp(
+      tester,
+      initialUser: testUser,
+      shoppingRepository: repository,
+    );
+
+    await tester.tap(find.byKey(const Key('item-menu-eggs')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('edit-shopping-item')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('商品を編集'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const Key('edit-item-name-field')))
+          .controller
+          ?.text,
+      '卵',
+    );
+    expect(
+      tester
+          .widget<TextFormField>(
+            find.byKey(const Key('edit-item-quantity-field')),
+          )
+          .controller
+          ?.text,
+      '2',
+    );
+
+    await tester.enterText(
+      find.byKey(const Key('edit-item-name-field')),
+      '  平飼い卵  ',
+    );
+    await tester.enterText(
+      find.byKey(const Key('edit-item-quantity-field')),
+      '3',
+    );
+    await tester.enterText(
+      find.byKey(const Key('edit-item-note-field')),
+      '  10個入り  ',
+    );
+    final saveButton = find.byKey(const Key('save-edit-item-button'));
+    await tester.ensureVisible(saveButton);
+    await tester.pumpAndSettle();
+    await tester.tap(saveButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('商品を編集'), findsNothing);
+    expect(find.text('平飼い卵 ×3'), findsOneWidget);
+    expect(find.textContaining('10個入り'), findsOneWidget);
+    expect(repository.lastEditedGroupId, testGroup.id);
+    final edited = repository.item(testGroup.id, 'eggs')!;
+    expect(edited.createdBy, original.createdBy);
+    expect(edited.createdByName, original.createdByName);
+    expect(edited.createdAt, original.createdAt);
+    expect(edited.status, ShoppingItemStatus.pending);
+  });
+
+  testWidgets('編集をキャンセルすると商品を更新しない', (tester) async {
+    final repository = FakeShoppingRepository(_defaultItems());
+    await _pumpApp(
+      tester,
+      initialUser: testUser,
+      shoppingRepository: repository,
+    );
+
+    await tester.tap(find.byKey(const Key('item-menu-milk')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('edit-shopping-item')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('edit-item-name-field')),
+      '変更しない牛乳',
+    );
+    await tester.tap(find.byKey(const Key('cancel-edit-item-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('牛乳'), findsOneWidget);
+    expect(find.text('変更しない牛乳'), findsNothing);
+    expect(repository.editCallCount, 0);
+  });
+
+  testWidgets('商品名が空の編集は保存できない', (tester) async {
+    final repository = FakeShoppingRepository(_defaultItems());
+    await _pumpApp(
+      tester,
+      initialUser: testUser,
+      shoppingRepository: repository,
+    );
+
+    await tester.tap(find.byKey(const Key('item-menu-milk')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('edit-shopping-item')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('edit-item-name-field')), ' ');
+    final saveButton = find.byKey(const Key('save-edit-item-button'));
+    await tester.ensureVisible(saveButton);
+    await tester.pumpAndSettle();
+    await tester.tap(saveButton);
+    await tester.pump();
+
+    expect(find.text('商品名を入力してください'), findsOneWidget);
+    expect(find.text('商品を編集'), findsOneWidget);
+    expect(repository.editCallCount, 0);
+  });
+
+  testWidgets('編集保存の連打を一度の更新に限定する', (tester) async {
+    final completion = Completer<void>();
+    final repository = FakeShoppingRepository(
+      _defaultItems(),
+      editCompletion: completion,
+    );
+    await _pumpApp(
+      tester,
+      initialUser: testUser,
+      shoppingRepository: repository,
+    );
+
+    await tester.tap(find.byKey(const Key('item-menu-milk')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('edit-shopping-item')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('edit-item-name-field')),
+      '低脂肪牛乳',
+    );
+    final saveButton = find.byKey(const Key('save-edit-item-button'));
+    await tester.ensureVisible(saveButton);
+    await tester.pumpAndSettle();
+    await tester.tap(saveButton);
+    await tester.pump();
+    await tester.tap(saveButton);
+    await tester.pump();
+
+    expect(repository.editCallCount, 1);
+    completion.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('低脂肪牛乳'), findsOneWidget);
+  });
+
+  testWidgets('編集失敗時はSheetと入力内容を維持して安全なエラーを表示する', (tester) async {
+    final repository = FakeShoppingRepository(_defaultItems(), failEdit: true);
+    await _pumpApp(
+      tester,
+      initialUser: testUser,
+      shoppingRepository: repository,
+    );
+
+    await tester.tap(find.byKey(const Key('item-menu-milk')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('edit-shopping-item')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('edit-item-name-field')),
+      '低脂肪牛乳',
+    );
+    final saveButton = find.byKey(const Key('save-edit-item-button'));
+    await tester.ensureVisible(saveButton);
+    await tester.pumpAndSettle();
+    await tester.tap(saveButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('商品を編集'), findsOneWidget);
+    expect(find.text('低脂肪牛乳'), findsOneWidget);
+    expect(find.byKey(const Key('edit-item-error')), findsOneWidget);
+    expect(find.textContaining('Sensitive Firebase error'), findsNothing);
+    expect(repository.item(testGroup.id, 'milk')?.name, '牛乳');
+  });
+
+  testWidgets('編集中にGroupが変わった場合は旧Groupの商品を更新しない', (tester) async {
+    const secondGroup = KatteGroup(
+      id: 'group-parents',
+      name: '実家',
+      createdBy: 'test-user',
+      inviteCode: 'P4R3NT',
+    );
+    final repository = FakeShoppingRepository(
+      _defaultItems(),
+      itemsByGroup: {
+        secondGroup.id: [_item(id: 'other-milk', name: '実家の牛乳')],
+      },
+    );
+    await _pumpApp(
+      tester,
+      initialUser: testUser,
+      initialGroups: const [testGroup, secondGroup],
+      shoppingRepository: repository,
+    );
+
+    await tester.tap(find.byKey(const Key('item-menu-milk')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('edit-shopping-item')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('edit-item-name-field')),
+      '更新してはいけない牛乳',
+    );
+    final saveButton = find.byKey(const Key('save-edit-item-button'));
+    final container = ProviderScope.containerOf(tester.element(saveButton));
+    container.read(currentGroupIdProvider.notifier).select(secondGroup.id);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(saveButton);
+    await tester.pumpAndSettle();
+    await tester.tap(saveButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('表示中のグループが変わりました。'), findsOneWidget);
+    expect(repository.editCallCount, 0);
+    expect(repository.item(testGroup.id, 'milk')?.name, '牛乳');
+    expect(repository.item(secondGroup.id, 'other-milk')?.name, '実家の牛乳');
+  });
+
+  testWidgets('編集中に別端末で購入済みになった商品をpendingへ戻さない', (tester) async {
+    final repository = FakeShoppingRepository(_defaultItems());
+    await _pumpApp(
+      tester,
+      initialUser: testUser,
+      shoppingRepository: repository,
+    );
+
+    await tester.tap(find.byKey(const Key('item-menu-milk')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('edit-shopping-item')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('edit-item-name-field')),
+      '低脂肪牛乳',
+    );
+    await repository.setPurchased(
+      groupId: testGroup.id,
+      user: testUser,
+      itemId: 'milk',
+      isPurchased: true,
+    );
+    await tester.pumpAndSettle();
+    final saveButton = find.byKey(const Key('save-edit-item-button'));
+    await tester.ensureVisible(saveButton);
+    await tester.pumpAndSettle();
+    await tester.tap(saveButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('この商品はすでに購入済みです。'), findsOneWidget);
+    expect(
+      repository.item(testGroup.id, 'milk')?.status,
+      ShoppingItemStatus.purchased,
+    );
+    expect(repository.lastEditedGroupId, isNull);
+  });
+
+  testWidgets('編集中に別端末で削除された場合は商品が見つからないErrorを表示する', (tester) async {
+    final repository = FakeShoppingRepository(_defaultItems());
+    await _pumpApp(
+      tester,
+      initialUser: testUser,
+      shoppingRepository: repository,
+    );
+
+    await tester.tap(find.byKey(const Key('item-menu-milk')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('edit-shopping-item')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('edit-item-name-field')),
+      '低脂肪牛乳',
+    );
+    await repository.deleteItem(groupId: testGroup.id, itemId: 'milk');
+    await tester.pumpAndSettle();
+    final saveButton = find.byKey(const Key('save-edit-item-button'));
+    await tester.ensureVisible(saveButton);
+    await tester.pumpAndSettle();
+    await tester.tap(saveButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('商品が見つかりません。'), findsOneWidget);
+    expect(repository.item(testGroup.id, 'milk'), isNull);
+    expect(repository.lastEditedGroupId, isNull);
   });
 
   testWidgets('購入失敗時は商品を残して安全なエラーを表示する', (tester) async {
@@ -745,6 +1033,7 @@ void main() {
     expect(find.text('購入履歴'), findsOneWidget);
     expect(find.text('ティッシュ'), findsOneWidget);
     expect(find.byKey(const Key('item-menu-tissues')), findsNothing);
+    expect(find.byKey(const Key('edit-shopping-item')), findsNothing);
     expect(find.byKey(const Key('delete-shopping-item')), findsNothing);
     expect(find.text('牛乳'), findsNothing);
   });
@@ -1586,7 +1875,9 @@ class FakeShoppingRepository implements ShoppingRepository {
     this.failSuggestions = false,
     this.failDeletion = false,
     this.failPurchase = false,
+    this.failEdit = false,
     this.purchaseCompletion,
+    this.editCompletion,
   }) : _itemsByGroup = {
          testGroup.id: [...initialItems],
          for (final entry in (itemsByGroup ?? {}).entries)
@@ -1603,13 +1894,17 @@ class FakeShoppingRepository implements ShoppingRepository {
   final bool failSuggestions;
   final bool failDeletion;
   final bool failPurchase;
+  final bool failEdit;
   final Completer<void>? purchaseCompletion;
+  final Completer<void>? editCompletion;
   final List<String> watchedGroupIds = [];
   final List<String> fetchedSuggestionGroupIds = [];
   var _nextId = 1;
   String? lastWrittenGroupId;
   String? lastDeletedGroupId;
   String? lastDeletedItemId;
+  String? lastEditedGroupId;
+  var editCallCount = 0;
 
   @override
   Stream<List<ShoppingItem>> watchPendingItems(String groupId) async* {
@@ -1740,6 +2035,59 @@ class FakeShoppingRepository implements ShoppingRepository {
   }
 
   @override
+  Future<void> updateItem({
+    required String groupId,
+    required String itemId,
+    required String name,
+    required int quantity,
+    required String note,
+  }) async {
+    editCallCount++;
+    if (failEdit) {
+      throw FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'unavailable',
+        message: 'Sensitive Firebase error details',
+      );
+    }
+    if (editCompletion != null) {
+      await editCompletion!.future;
+    }
+    final items = _itemsByGroup[groupId] ?? [];
+    final index = items.indexWhere((item) => item.id == itemId);
+    if (index < 0) {
+      throw const ShoppingItemNotFoundException();
+    }
+    final current = items[index];
+    if (current.status != ShoppingItemStatus.pending) {
+      throw const ShoppingItemNotPendingException();
+    }
+    lastWrittenGroupId = groupId;
+    lastEditedGroupId = groupId;
+    items[index] = ShoppingItem(
+      id: current.id,
+      name: name.trim(),
+      quantity: quantity,
+      note: note.trim(),
+      status: current.status,
+      createdBy: current.createdBy,
+      createdByName: current.createdByName,
+      createdAt: current.createdAt,
+      purchasedBy: current.purchasedBy,
+      purchasedByName: current.purchasedByName,
+      purchasedAt: current.purchasedAt,
+      updatedAt: DateTime.now(),
+    );
+    _controller.add(groupId);
+  }
+
+  ShoppingItem? item(String groupId, String itemId) {
+    return (_itemsByGroup[groupId] ?? const [])
+        .where((item) => item.id == itemId)
+        .firstOrNull;
+  }
+
+  @override
   Future<void> deleteItem({
     required String groupId,
     required String itemId,
@@ -1823,6 +2171,15 @@ class PermissionDeniedShoppingRepository implements ShoppingRepository {
     required AuthUser user,
     required String itemId,
     required bool isPurchased,
+  }) async {}
+
+  @override
+  Future<void> updateItem({
+    required String groupId,
+    required String itemId,
+    required String name,
+    required int quantity,
+    required String note,
   }) async {}
 
   @override

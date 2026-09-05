@@ -216,15 +216,16 @@ service cloud.firestore {
         allow update: if isGroupMember(groupId)
           && request.resource.data.createdBy == resource.data.createdBy
           && request.resource.data.updatedAt is timestamp
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'status',
-            'purchasedBy',
-            'purchasedByName',
-            'purchasedAt',
-            'updatedAt'
-          ])
           && (
             (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'status',
+                'purchasedBy',
+                'purchasedByName',
+                'purchasedAt',
+                'updatedAt'
+              ])
+              &&
               request.resource.data.status == 'purchased'
               && request.resource.data.purchasedBy == request.auth.uid
               && request.resource.data.purchasedByName is string
@@ -232,10 +233,33 @@ service cloud.firestore {
             )
             ||
             (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'status',
+                'purchasedBy',
+                'purchasedByName',
+                'purchasedAt',
+                'updatedAt'
+              ])
+              &&
               request.resource.data.status == 'pending'
               && request.resource.data.purchasedBy == null
               && request.resource.data.purchasedByName == null
               && request.resource.data.purchasedAt == null
+            )
+            ||
+            (
+              resource.data.status == 'pending'
+              && request.resource.data.status == 'pending'
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'name', 'quantity', 'note', 'updatedAt'
+              ])
+              && request.resource.data.name is string
+              && request.resource.data.name.size() > 0
+              && request.resource.data.name.size() <= 200
+              && request.resource.data.quantity is int
+              && request.resource.data.quantity > 0
+              && request.resource.data.note is string
+              && request.resource.data.note.size() <= 500
             )
           );
         allow delete: if isGroupMember(groupId)
