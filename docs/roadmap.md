@@ -341,6 +341,13 @@ iPhone実機へのDebug build・install・launchは成功済み。ホーム画�
 
 2ユーザー実機での共有・Group切替・削除後データ確認は最終手動検証として実施する。
 
+## Pending Item Delete
+
+- Shopping一覧の各pending Itemに削除メニューと確認Dialogを追加
+- 現在Groupを固定してRepository経由でFirestore Documentを削除
+- RulesでGroup memberかつpending Itemだけ削除可能
+- purchased Item、削除Push、削除Undoは対象外
+
 ---
 
 # Typography — Zen Kaku Gothic New

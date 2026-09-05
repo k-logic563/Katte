@@ -28,6 +28,14 @@ abstract interface class ShoppingRepository {
     required bool isPurchased,
   });
 
+  Future<void> updateItem({
+    required String groupId,
+    required String itemId,
+    required String name,
+    required int quantity,
+    required String note,
+  });
+
   Future<void> deleteItem({required String groupId, required String itemId});
 }
 
@@ -157,9 +165,44 @@ class FirestoreShoppingRepository implements ShoppingRepository {
   }
 
   @override
+  Future<void> updateItem({
+    required String groupId,
+    required String itemId,
+    required String name,
+    required int quantity,
+    required String note,
+  }) {
+    final itemReference = _itemsCollection(groupId).doc(itemId);
+    return _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(itemReference);
+      final data = snapshot.data();
+      if (!snapshot.exists || data == null) {
+        throw const ShoppingItemNotFoundException();
+      }
+      if (data['status'] != ShoppingItemStatus.pending.name) {
+        throw const ShoppingItemNotPendingException();
+      }
+      transaction.update(itemReference, {
+        'name': name.trim(),
+        'quantity': quantity,
+        'note': note.trim(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    });
+  }
+
+  @override
   Future<void> deleteItem({required String groupId, required String itemId}) {
     return _itemsCollection(groupId).doc(itemId).delete();
   }
+}
+
+class ShoppingItemNotFoundException implements Exception {
+  const ShoppingItemNotFoundException();
+}
+
+class ShoppingItemNotPendingException implements Exception {
+  const ShoppingItemNotPendingException();
 }
 
 String _displayName(AuthUser user) {

@@ -156,10 +156,42 @@ class ShoppingController extends Notifier<AsyncValue<void>> {
     );
   }
 
-  Future<bool> deleteItem(String itemId) {
+  Future<bool> updateItem({
+    required String groupId,
+    required String itemId,
+    required String name,
+    required int quantity,
+    required String note,
+  }) {
+    if (ref.read(currentGroupProvider)?.id != groupId) {
+      state = AsyncError(
+        const ShoppingOperationException('表示中のグループが変わりました。'),
+        StackTrace.current,
+      );
+      return Future.value(false);
+    }
+    return _run(
+      (repository, _) => repository.updateItem(
+        groupId: groupId,
+        itemId: itemId,
+        name: name,
+        quantity: quantity,
+        note: note,
+      ),
+    );
+  }
+
+  Future<bool> deleteItem({required String groupId, required String itemId}) {
+    if (ref.read(currentGroupProvider)?.id != groupId) {
+      state = AsyncError(
+        const ShoppingOperationException('表示中のグループが変わりました。'),
+        StackTrace.current,
+      );
+      return Future.value(false);
+    }
     return _run(
       (repository, _) =>
-          repository.deleteItem(groupId: _currentGroupId(), itemId: itemId),
+          repository.deleteItem(groupId: groupId, itemId: itemId),
     );
   }
 
@@ -211,6 +243,12 @@ class ShoppingOperationException implements Exception {
 }
 
 ShoppingOperationException _safeOperationError(Object error) {
+  if (error is ShoppingItemNotFoundException) {
+    return const ShoppingOperationException('商品が見つかりません。');
+  }
+  if (error is ShoppingItemNotPendingException) {
+    return const ShoppingOperationException('この商品はすでに購入済みです。');
+  }
   if (error is FirebaseException && error.code == 'unavailable') {
     return const ShoppingOperationException('通信状態を確認して、もう一度お試しください。');
   }

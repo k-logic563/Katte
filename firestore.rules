@@ -238,7 +238,8 @@ service cloud.firestore {
               && request.resource.data.purchasedAt == null
             )
           );
-        allow delete: if isGroupMember(groupId);
+        allow delete: if isGroupMember(groupId)
+          && resource.data.status == 'pending';
       }
 
       match /itemSuggestions/{suggestionId} {

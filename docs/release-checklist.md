@@ -1,6 +1,6 @@
 # Katte 1.0.0 Release Checklist
 
-更新日: 2026-09-01。`[x]` はリポジトリまたはFirebase CLIで確認済み、`[ ]` は手動作業または
+更新日: 2026-09-05。`[x]` はリポジトリまたはFirebase CLIで確認済み、`[ ]` は手動作業または
 BLOCKER。全BLOCKERが解消するまでRelease Candidateとはしない。
 
 ## Build and identity
@@ -28,6 +28,8 @@ BLOCKER。全BLOCKERが解消するまでRelease Candidateとはしない。
 - [x] `deleteGroup`（callable、us-central1、v2）deploy済み
 - [x] `sendShoppingItemCreatedNotification`（us-central1、v2）deploy済み
 - [x] Google Sign-In / Auth / Firestore / FCM / Analytics / Crashlytics構成あり
+- [ ] **BLOCKER (iOS):** App Review Guideline 4.8を満たす同等のLogin Service
+  （通常はSign in with Apple）を実装・実機検証
 - [x] Emulator、localhost、mock、test accountのproduction混入なし
 - [ ] **MUST FIX:** `katte-dev-jp`を正式公開にも使うかProduction projectを分離するか決定
 - [x] APNs key登録と2ユーザーiPhoneでPush E2E成功
@@ -43,6 +45,7 @@ BLOCKER。全BLOCKERが解消するまでRelease Candidateとはしない。
 - [ ] **BLOCKER:** アプリ内のアカウント・関連データ削除導線を実装・検証
 - [ ] **BLOCKER:** Google Play向けWeb削除申請ページを公開
 - [ ] **BLOCKER:** Privacy Policyの運営者・連絡先・保存/削除期間を確定して公開URLを用意
+- [ ] **BLOCKER (iOS):** 公開Privacy Policyへの見つけやすいアプリ内導線を追加
 - [ ] Terms of Serviceを法務・運用判断し、採用する場合は公開URLとアプリ内導線を用意
 
 ### App Store App Privacy申告案
@@ -111,7 +114,8 @@ Broker用途、クロスアプリtrackingはない。
 - [x] Group削除はserverでAuth・membership・ownerを検証
 - [x] Flutter outdated確認（直接依存はfirebase_auth patch、go_router majorのみ）
 - [x] Functions build / 6 tests成功、outdatedはdev dependency majorのみ
-- [ ] **SHOULD FIX:** Functions依存ツリーの`uuid` moderate 7件を上流修正後に解消
+- [ ] **SHOULD FIX:** Functions依存ツリーの`qs` / `uuid` moderate 8件を、互換性を検証した
+  上流更新で解消（`npm audit fix --force`は`firebase-admin`のbreaking downgradeとなるため未適用）
 
 ## Release commands
 
@@ -138,8 +142,9 @@ keystoreと`key.properties`はcommitしない。Google Play App Signingを有効
 ### BLOCKER
 
 - Android SDK / production upload key / signed AAB
+- iOSのGoogle Sign-Inに対するApp Review Guideline 4.8準拠（通常はSign in with Apple）
 - account deletion（in-app + Google Play Web）
-- public Privacy Policy URL / Support URL
+- public Privacy Policy URL / Support URL、およびiOSアプリ内のPrivacy Policy導線
 - TestFlight主要flowおよびStore Console提出物の実機・手動確認
 
 ### MUST FIX
@@ -151,7 +156,7 @@ keystoreと`key.properties`はcommitしない。Google Play App Signingを有効
 ### SHOULD FIX
 
 - Terms of Serviceの運用・法務判断
-- FunctionsのFirebase/Google依存ツリーに残る`uuid` moderate advisory（強制修正は
+- FunctionsのFirebase/Google依存ツリーに残る`qs` / `uuid` moderate advisory 8件（強制修正は
   firebase-admin 10系へのbreaking downgradeとなるため未適用）
 - screenshot device matrixとnetwork/upgrade coverageの拡張
 

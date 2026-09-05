@@ -266,6 +266,15 @@ void main() {
     final name = tester.widget<Text>(find.text(longName));
     expect(name.maxLines, 3);
     expect(name.overflow, TextOverflow.ellipsis);
+
+    await tester.tap(find.byKey(const Key('item-menu-long-name')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('delete-shopping-item')));
+    await tester.pumpAndSettle();
+
+    final dialogName = tester.widget<Text>(find.text(longName).last);
+    expect(dialogName.maxLines, 3);
+    expect(dialogName.overflow, TextOverflow.ellipsis);
     expect(tester.takeException(), isNull);
   });
 
@@ -481,6 +490,159 @@ void main() {
     expect(find.text('商品名を入力してください'), findsOneWidget);
   });
 
+  testWidgets('pending商品を確認後に削除してRealtime一覧から消す', (tester) async {
+    final repository = FakeShoppingRepository(_defaultItems());
+    await _pumpApp(
+      tester,
+      initialUser: testUser,
+      shoppingRepository: repository,
+    );
+
+    await tester.tap(find.byKey(const Key('item-menu-eggs')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('delete-shopping-item')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('この商品を削除しますか？'), findsOneWidget);
+    expect(find.text('卵'), findsWidgets);
+
+    await tester.tap(find.byKey(const Key('confirm-delete-item-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('卵 ×2'), findsNothing);
+    expect(find.text('削除しました'), findsOneWidget);
+    expect(repository.lastDeletedGroupId, testGroup.id);
+    expect(repository.lastDeletedItemId, 'eggs');
+  });
+
+  testWidgets('商品名と行余白のtapでは購入せずCheckboxだけで購入する', (tester) async {
+    final repository = FakeShoppingRepository(_defaultItems());
+    await _pumpApp(
+      tester,
+      initialUser: testUser,
+      shoppingRepository: repository,
+    );
+
+    await tester.tap(find.text('牛乳'));
+    await tester.pumpAndSettle();
+    expect(find.text('牛乳'), findsOneWidget);
+    expect(repository.lastWrittenGroupId, isNull);
+
+    final tile = find.byKey(const Key('purchase-milk'));
+    final tileRect = tester.getRect(tile);
+    await tester.tapAt(Offset(tileRect.right - 64, tileRect.bottom - 8));
+    await tester.pumpAndSettle();
+    expect(find.text('牛乳'), findsOneWidget);
+    expect(repository.lastWrittenGroupId, isNull);
+
+    await tester.tap(
+      find.descendant(of: tile, matching: find.byType(Checkbox)),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('牛乳'), findsNothing);
+    expect(find.text('牛乳を購入済みにしました'), findsOneWidget);
+    expect(repository.lastWrittenGroupId, testGroup.id);
+  });
+
+  testWidgets('商品メニューを開いても購入処理を実行しない', (tester) async {
+    final repository = FakeShoppingRepository(_defaultItems());
+    await _pumpApp(
+      tester,
+      initialUser: testUser,
+      shoppingRepository: repository,
+    );
+
+    await tester.tap(find.byKey(const Key('item-menu-milk')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('delete-shopping-item')), findsOneWidget);
+    expect(find.text('牛乳'), findsOneWidget);
+    expect(repository.lastWrittenGroupId, isNull);
+  });
+
+  testWidgets('購入失敗時は商品を残して安全なエラーを表示する', (tester) async {
+    final repository = FakeShoppingRepository(
+      _defaultItems(),
+      failPurchase: true,
+    );
+    await _pumpApp(
+      tester,
+      initialUser: testUser,
+      shoppingRepository: repository,
+    );
+
+    final tile = find.byKey(const Key('purchase-milk'));
+    await tester.tap(
+      find.descendant(of: tile, matching: find.byType(Checkbox)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('牛乳'), findsOneWidget);
+    expect(find.text('更新できませんでした。'), findsOneWidget);
+    expect(find.textContaining('Sensitive Firebase error'), findsNothing);
+  });
+
+  testWidgets('削除失敗時は安全なメッセージを表示して商品を残す', (tester) async {
+    final repository = FakeShoppingRepository(
+      _defaultItems(),
+      failDeletion: true,
+    );
+    await _pumpApp(
+      tester,
+      initialUser: testUser,
+      shoppingRepository: repository,
+    );
+
+    await tester.tap(find.byKey(const Key('item-menu-milk')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('delete-shopping-item')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('confirm-delete-item-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('牛乳'), findsOneWidget);
+    expect(find.text('削除に失敗しました。'), findsOneWidget);
+    expect(find.textContaining('Sensitive Firebase error'), findsNothing);
+  });
+
+  testWidgets('確認中にGroupが変わった場合は別Groupの商品を削除しない', (tester) async {
+    const secondGroup = KatteGroup(
+      id: 'group-parents',
+      name: '実家',
+      createdBy: 'test-user',
+      inviteCode: 'P4R3NT',
+    );
+    final repository = FakeShoppingRepository(
+      _defaultItems(),
+      itemsByGroup: {
+        secondGroup.id: [_item(id: 'milk', name: '実家の牛乳')],
+      },
+    );
+    await _pumpApp(
+      tester,
+      initialUser: testUser,
+      initialGroups: const [testGroup, secondGroup],
+      shoppingRepository: repository,
+    );
+
+    await tester.tap(find.byKey(const Key('item-menu-milk')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('delete-shopping-item')));
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byKey(const Key('confirm-delete-item-button'))),
+    );
+    container.read(currentGroupIdProvider.notifier).select(secondGroup.id);
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('confirm-delete-item-button')));
+    await tester.pumpAndSettle();
+
+    expect(repository.lastDeletedGroupId, isNull);
+    expect(find.text('実家の牛乳'), findsOneWidget);
+    expect(find.text('削除に失敗しました。'), findsOneWidget);
+  });
+
   testWidgets('購入済みにすると一覧から消えUndoで戻る', (tester) async {
     final analytics = FakeAnalyticsService();
     await _pumpApp(tester, initialUser: testUser, analyticsService: analytics);
@@ -582,6 +744,8 @@ void main() {
 
     expect(find.text('購入履歴'), findsOneWidget);
     expect(find.text('ティッシュ'), findsOneWidget);
+    expect(find.byKey(const Key('item-menu-tissues')), findsNothing);
+    expect(find.byKey(const Key('delete-shopping-item')), findsNothing);
     expect(find.text('牛乳'), findsNothing);
   });
 
@@ -1420,6 +1584,8 @@ class FakeShoppingRepository implements ShoppingRepository {
     Map<String, List<ShoppingItem>>? itemsByGroup,
     Map<String, List<ItemSuggestion>>? suggestionsByGroup,
     this.failSuggestions = false,
+    this.failDeletion = false,
+    this.failPurchase = false,
     this.purchaseCompletion,
   }) : _itemsByGroup = {
          testGroup.id: [...initialItems],
@@ -1435,11 +1601,15 @@ class FakeShoppingRepository implements ShoppingRepository {
   final Map<String, List<ShoppingItem>> _itemsByGroup;
   final Map<String, List<ItemSuggestion>> _suggestionsByGroup;
   final bool failSuggestions;
+  final bool failDeletion;
+  final bool failPurchase;
   final Completer<void>? purchaseCompletion;
   final List<String> watchedGroupIds = [];
   final List<String> fetchedSuggestionGroupIds = [];
   var _nextId = 1;
   String? lastWrittenGroupId;
+  String? lastDeletedGroupId;
+  String? lastDeletedItemId;
 
   @override
   Stream<List<ShoppingItem>> watchPendingItems(String groupId) async* {
@@ -1532,6 +1702,13 @@ class FakeShoppingRepository implements ShoppingRepository {
     required String itemId,
     required bool isPurchased,
   }) async {
+    if (failPurchase) {
+      throw FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'unavailable',
+        message: 'Sensitive Firebase error details',
+      );
+    }
     lastWrittenGroupId = groupId;
     final items = _itemsByGroup[groupId] ?? [];
     _itemsByGroup[groupId] = [
@@ -1567,6 +1744,15 @@ class FakeShoppingRepository implements ShoppingRepository {
     required String groupId,
     required String itemId,
   }) async {
+    if (failDeletion) {
+      throw FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'unavailable',
+        message: 'Sensitive Firebase error details',
+      );
+    }
+    lastDeletedGroupId = groupId;
+    lastDeletedItemId = itemId;
     _itemsByGroup[groupId] = (_itemsByGroup[groupId] ?? [])
         .where((item) => item.id != itemId)
         .toList();

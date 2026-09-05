@@ -83,6 +83,17 @@ class ShoppingPage extends ConsumerWidget {
             items: items,
             onAdd: () => _openAddItemSheet(context),
             onPurchase: (item) => _purchaseItem(context, ref, item),
+            onEdit: (item) => _openEditItemSheet(
+              context,
+              item: item,
+              groupId: group?.id,
+            ),
+            onDelete: (item) => _confirmDeleteItem(
+              context,
+              ref,
+              item: item,
+              groupId: group?.id,
+            ),
           ),
         ),
       ],
@@ -113,6 +124,8 @@ class ShoppingPage extends ConsumerWidget {
     required List<ShoppingItem> items,
     required VoidCallback onAdd,
     required Future<void> Function(ShoppingItem) onPurchase,
+    required Future<void> Function(ShoppingItem) onEdit,
+    required Future<void> Function(ShoppingItem) onDelete,
   }) {
     if (items.isEmpty) {
       return [_EmptyState(onAdd: onAdd)];
@@ -120,7 +133,12 @@ class ShoppingPage extends ConsumerWidget {
 
     return [
       for (final item in items)
-        _ShoppingItemTile(item: item, onPurchase: () => onPurchase(item)),
+        _ShoppingItemTile(
+          item: item,
+          onPurchase: () => onPurchase(item),
+          onEdit: () => onEdit(item),
+          onDelete: () => onDelete(item),
+        ),
       const SizedBox(height: 16),
       SizedBox(
         width: double.infinity,
@@ -132,6 +150,25 @@ class ShoppingPage extends ConsumerWidget {
         ),
       ),
     ];
+  }
+
+  Future<void> _openEditItemSheet(
+    BuildContext context, {
+    required ShoppingItem item,
+    required String? groupId,
+  }) async {
+    if (groupId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('更新できませんでした。')),
+      );
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => _EditItemSheet(item: item, groupId: groupId),
+    );
   }
 
   Future<void> _purchaseItem(
@@ -183,6 +220,58 @@ class ShoppingPage extends ConsumerWidget {
     if (!succeeded && messenger.mounted) {
       messenger.showSnackBar(const SnackBar(content: Text('元に戻せませんでした。')));
     }
+  }
+
+  Future<void> _confirmDeleteItem(
+    BuildContext context,
+    WidgetRef ref, {
+    required ShoppingItem item,
+    required String? groupId,
+  }) async {
+    if (groupId == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('削除に失敗しました。')));
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('この商品を削除しますか？'),
+        content: Text(item.name, maxLines: 3, overflow: TextOverflow.ellipsis),
+        actions: [
+          TextButton(
+            key: const Key('cancel-delete-item-button'),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            key: const Key('confirm-delete-item-button'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(dialogContext).colorScheme.error,
+            ),
+            child: const Text('削除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) {
+      return;
+    }
+
+    final messenger = ScaffoldMessenger.of(context);
+    final succeeded = await ref
+        .read(shoppingControllerProvider.notifier)
+        .deleteItem(groupId: groupId, itemId: item.id);
+    if (!messenger.mounted) {
+      return;
+    }
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(succeeded ? '削除しました' : '削除に失敗しました。')),
+      );
   }
 }
 
@@ -299,10 +388,17 @@ class _GroupSwitcherSheet extends ConsumerWidget {
 }
 
 class _ShoppingItemTile extends StatefulWidget {
-  const _ShoppingItemTile({required this.item, required this.onPurchase});
+  const _ShoppingItemTile({
+    required this.item,
+    required this.onPurchase,
+    required this.onEdit,
+    required this.onDelete,
+  });
 
   final ShoppingItem item;
   final Future<void> Function() onPurchase;
+  final Future<void> Function() onEdit;
+  final Future<void> Function() onDelete;
 
   @override
   State<_ShoppingItemTile> createState() => _ShoppingItemTileState();
@@ -322,6 +418,28 @@ class _ShoppingItemTileState extends State<_ShoppingItemTile> {
     }
   }
 
+  Future<void> _delete() async {
+    if (_isUpdating) {
+      return;
+    }
+    setState(() => _isUpdating = true);
+    await widget.onDelete();
+    if (mounted) {
+      setState(() => _isUpdating = false);
+    }
+  }
+
+  Future<void> _edit() async {
+    if (_isUpdating) {
+      return;
+    }
+    setState(() => _isUpdating = true);
+    await widget.onEdit();
+    if (mounted) {
+      setState(() => _isUpdating = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final item = widget.item;
@@ -333,11 +451,52 @@ class _ShoppingItemTileState extends State<_ShoppingItemTile> {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
-      child: CheckboxListTile(
+      child: ListTile(
         key: Key('purchase-${item.id}'),
-        controlAffinity: ListTileControlAffinity.leading,
-        value: item.isPurchased,
-        onChanged: _isUpdating ? null : (_) => _purchase(),
+        leading: Semantics(
+          label: '${item.name}を購入済みにする',
+          child: Checkbox(
+            value: item.isPurchased,
+            onChanged: _isUpdating ? null : (_) => _purchase(),
+          ),
+        ),
+        trailing: PopupMenuButton<_ShoppingItemAction>(
+          key: Key('item-menu-${item.id}'),
+          tooltip: '${item.name}の商品メニュー',
+          enabled: !_isUpdating,
+          onSelected: (action) async {
+            switch (action) {
+              case _ShoppingItemAction.edit:
+                await _edit();
+              case _ShoppingItemAction.delete:
+                await _delete();
+            }
+          },
+          itemBuilder: (context) => const [
+            PopupMenuItem(
+              key: Key('edit-shopping-item'),
+              value: _ShoppingItemAction.edit,
+              child: Row(
+                children: [
+                  Icon(Icons.edit_outlined),
+                  SizedBox(width: 12),
+                  Text('編集'),
+                ],
+              ),
+            ),
+            PopupMenuItem(
+              key: Key('delete-shopping-item'),
+              value: _ShoppingItemAction.delete,
+              child: Row(
+                children: [
+                  Icon(Icons.delete_outline),
+                  SizedBox(width: 12),
+                  Text('削除'),
+                ],
+              ),
+            ),
+          ],
+        ),
         contentPadding: const EdgeInsets.fromLTRB(12, 6, 16, 6),
         title: Text(
           '${item.name}$quantity',
@@ -358,6 +517,8 @@ class _ShoppingItemTileState extends State<_ShoppingItemTile> {
     );
   }
 }
+
+enum _ShoppingItemAction { edit, delete }
 
 class _LoadError extends StatelessWidget {
   const _LoadError({required this.onRetry});
