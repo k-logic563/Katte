@@ -111,6 +111,16 @@ class GroupDetailsPage extends ConsumerWidget {
                   icon: const Icon(Icons.copy),
                   label: const Text('コピー'),
                 ),
+                const Divider(height: 40),
+                ListTile(
+                  key: const Key('category-management-button'),
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.category_outlined),
+                  title: const Text('カテゴリ管理'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () =>
+                      context.push('/group-details/${group.id}/categories'),
+                ),
                 if (currentMember != null) ...[
                   const Divider(height: 48),
                   _GroupDangerAction(

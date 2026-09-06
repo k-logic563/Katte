@@ -127,6 +127,7 @@ ShoppingのGroup Switcherは使用Groupの切り替え、SettingsのGroup一覧�
 
 - 個数
 - メモ
+- カテゴリ（グループごとの自由カテゴリ。未指定は「未分類」）
 
 ### 状態
 
@@ -155,7 +156,15 @@ Shopping画面には `pending` の商品のみ表示する。
 
 ---
 
-## 4.4 Realtime Sync
+## 4.4 Category
+
+Group memberはグループ設定から40文字以内の自由カテゴリを作成・名称変更できる。
+trim後に同一となる名前（英字は大小文字を区別しない）は同一Group内で重複不可とする。
+商品は0または1カテゴリを`categoryId`で参照し、カテゴリ名は保持しない。既存商品や
+未指定商品、参照先が存在しない商品は「未分類」とする。カテゴリ削除時に商品は削除せず、
+購入状態にかかわらず`categoryId`をnullへ更新する。
+
+## 4.5 Realtime Sync
 
 Firestore のリアルタイムリスナーを利用し、
 同一グループ内の変更をリアルタイム反映する。
@@ -166,10 +175,12 @@ Firestore のリアルタイムリスナーを利用し、
 - 商品削除
 - 商品更新
 - 購入済み
+- カテゴリの作成・名称変更・削除
+- 商品のカテゴリ変更
 
 ---
 
-## 4.5 Push Notification
+## 4.6 Push Notification
 
 Phase 5では商品追加を、同じグループの追加者以外のメンバーへ通知する。
 アプリがForeground / Background / Terminatedの各状態でも受信できる構成とする。

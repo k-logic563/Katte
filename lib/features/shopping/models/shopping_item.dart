@@ -8,6 +8,7 @@ class ShoppingItem {
     required this.name,
     required this.quantity,
     required this.note,
+    this.categoryId,
     required this.status,
     required this.createdBy,
     required this.createdByName,
@@ -31,6 +32,7 @@ class ShoppingItem {
       name: _requiredString(data, 'name'),
       quantity: _requiredInt(data, 'quantity'),
       note: _requiredString(data, 'note'),
+      categoryId: data['categoryId'] as String?,
       status: _statusFromFirestore(data['status']),
       createdBy: _requiredString(data, 'createdBy'),
       createdByName: _requiredString(data, 'createdByName'),
@@ -46,6 +48,7 @@ class ShoppingItem {
   final String name;
   final int quantity;
   final String note;
+  final String? categoryId;
   final ShoppingItemStatus status;
   final String createdBy;
   final String createdByName;
@@ -62,6 +65,7 @@ class ShoppingItem {
       'name': name,
       'quantity': quantity,
       'note': note,
+      'categoryId': categoryId,
       'status': status.name,
       'createdBy': createdBy,
       'createdByName': createdByName,

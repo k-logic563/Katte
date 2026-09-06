@@ -55,6 +55,7 @@ Phase 4ではユーザーが作成または招待コードで参加したGroup�
 所属Group一覧は`users/{uid}/groups`を起点に取得し、全`groups` collectionは列挙しない。
 現在Group IDはRiverpodで即時切り替え、端末のSharedPreferencesへUser単位で保存する。
 pending、history、suggestions、membersはGroup IDをkeyにしたautoDispose familyで購読し、
+categoriesも同じGroup IDをkeyにした共有StreamProviderで一括購読する。商品ごとのcategory getは行わない。
 切り替え時は新しいAsyncValueへ移ることで旧Groupの表示とlistenerを残さない。
 
 ### Firebase Cloud Messaging
@@ -228,6 +229,7 @@ groups/{groupId}/items/{itemId}
 name
 quantity
 note
+categoryId
 
 status
 
@@ -253,6 +255,7 @@ Phase 3実装では `quantity` を数値（未入力は `1`）、`note` を文�
 `createdAt`、`purchasedAt`、`updatedAt` にはFirestoreのserver timestampを使用する。
 Shopping画面は `status == pending`、購入履歴画面は `status == purchased` のDocumentを購読する。
 購入操作とUndoは同じDocumentのstatusと購入者・購入日時フィールドを更新し、Document自体は削除しない。
+`categoryId`がない既存Documentは未分類として後方互換に読み込む。
 
 Shopping / Purchase Historyのqueryは現在選択中Group IDを必ず利用する。
 Groupを切り替えるとRiverpodのStreamProviderも新しいGroupのqueryへ切り替わる。
@@ -283,6 +286,29 @@ Client側で処理する。表示は最大8件とし、完全一致、最終使�
 Security Rulesは現在のGroup memberだけにread/create/updateを許可し、正規化キーの変更と
 不正な使用回数更新を拒否する。Group削除時はCloud Functionのrecursive deleteにより
 他のsubcollectionとともに削除され、Group退出だけでは削除されない。
+
+## categories
+
+```text
+groups/{groupId}/categories/{categoryId}
+
+name
+normalizedName
+sortOrder
+createdBy
+deleting
+createdAt
+updatedAt
+```
+
+カテゴリ名はitemへ複製せず、カテゴリ一覧を一括購読してClient側でMap相当として解決する。
+重複防止用に、正規化名をURL-safe Base64化したIDの
+`groups/{groupId}/categoryNames/{nameKey}`を予約Documentとしてtransaction内で更新する。
+
+カテゴリ削除はCallable FunctionがGroup membershipを再検証し、まず`deleting`をtrueにして
+新規参照をRulesで拒否する。その後、該当するpending/purchased itemを450件ずつ
+`categoryId: null`へ更新し、予約Documentとカテゴリを削除する。Group削除時は既存の
+recursive deleteによりcategoriesとcategoryNamesも削除される。
 
 ---
 

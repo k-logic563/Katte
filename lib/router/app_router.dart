@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../features/auth/application/auth_providers.dart';
 import '../features/auth/presentation/login_page.dart';
+import '../features/categories/presentation/category_management_page.dart';
 import '../features/groups/group_providers.dart';
 import '../features/groups/presentation/group_details_page.dart';
 import '../features/groups/presentation/group_setup_page.dart';
@@ -75,6 +76,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/group-details/:groupId',
         builder: (context, state) =>
             GroupDetailsPage(groupId: state.pathParameters['groupId']),
+      ),
+      GoRoute(
+        path: '/group-details/:groupId/categories',
+        builder: (context, state) =>
+            CategoryManagementPage(groupId: state.pathParameters['groupId']!),
       ),
     ],
   );

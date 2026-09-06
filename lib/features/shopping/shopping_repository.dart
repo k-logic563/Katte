@@ -19,6 +19,7 @@ abstract interface class ShoppingRepository {
     required String name,
     required int quantity,
     required String note,
+    required String? categoryId,
   });
 
   Future<void> setPurchased({
@@ -34,6 +35,7 @@ abstract interface class ShoppingRepository {
     required String name,
     required int quantity,
     required String note,
+    required String? categoryId,
   });
 
   Future<void> deleteItem({required String groupId, required String itemId});
@@ -113,6 +115,7 @@ class FirestoreShoppingRepository implements ShoppingRepository {
     required String name,
     required int quantity,
     required String note,
+    required String? categoryId,
   }) async {
     final displayName = name.trim();
     final normalizedName = normalizeSuggestionName(displayName);
@@ -121,6 +124,7 @@ class FirestoreShoppingRepository implements ShoppingRepository {
       name: displayName,
       quantity: quantity,
       note: note,
+      categoryId: categoryId,
       status: ShoppingItemStatus.pending,
       createdBy: user.uid,
       createdByName: _displayName(user),
@@ -171,6 +175,7 @@ class FirestoreShoppingRepository implements ShoppingRepository {
     required String name,
     required int quantity,
     required String note,
+    required String? categoryId,
   }) {
     final itemReference = _itemsCollection(groupId).doc(itemId);
     return _firestore.runTransaction((transaction) async {
@@ -186,6 +191,7 @@ class FirestoreShoppingRepository implements ShoppingRepository {
         'name': name.trim(),
         'quantity': quantity,
         'note': note.trim(),
+        'categoryId': categoryId,
         'updatedAt': FieldValue.serverTimestamp(),
       });
     });

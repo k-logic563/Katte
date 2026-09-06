@@ -66,6 +66,16 @@ service cloud.firestore {
         && request.resource.data.updatedAt is timestamp;
     }
 
+    function validItemCategory(groupId) {
+      return !request.resource.data.keys().hasAny(['categoryId'])
+        || request.resource.data.categoryId == null
+        || (
+          request.resource.data.categoryId is string
+          && exists(/databases/$(database)/documents/groups/$(groupId)/categories/$(request.resource.data.categoryId))
+          && get(/databases/$(database)/documents/groups/$(groupId)/categories/$(request.resource.data.categoryId)).data.deleting == false
+        );
+    }
+
     match /users/{userId} {
       allow get: if isSelf(userId);
       allow create: if isSelf(userId)
@@ -188,6 +198,7 @@ service cloud.firestore {
             'name',
             'quantity',
             'note',
+            'categoryId',
             'status',
             'createdBy',
             'createdByName',
@@ -204,6 +215,7 @@ service cloud.firestore {
           && request.resource.data.quantity > 0
           && request.resource.data.note is string
           && request.resource.data.note.size() <= 500
+          && validItemCategory(groupId)
           && request.resource.data.status == 'pending'
           && request.resource.data.createdBy == request.auth.uid
           && request.resource.data.createdByName is string
@@ -251,7 +263,7 @@ service cloud.firestore {
               resource.data.status == 'pending'
               && request.resource.data.status == 'pending'
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-                'name', 'quantity', 'note', 'updatedAt'
+                'name', 'quantity', 'note', 'categoryId', 'updatedAt'
               ])
               && request.resource.data.name is string
               && request.resource.data.name.size() > 0
@@ -260,10 +272,61 @@ service cloud.firestore {
               && request.resource.data.quantity > 0
               && request.resource.data.note is string
               && request.resource.data.note.size() <= 500
+              && validItemCategory(groupId)
             )
           );
         allow delete: if isGroupMember(groupId)
           && resource.data.status == 'pending';
+      }
+
+      match /categories/{categoryId} {
+        allow read: if isGroupMember(groupId);
+        allow create: if isGroupMember(groupId)
+          && request.resource.data.keys().hasAll([
+            'name', 'normalizedName', 'sortOrder', 'createdBy', 'deleting', 'createdAt', 'updatedAt'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'name', 'normalizedName', 'sortOrder', 'createdBy', 'deleting', 'createdAt', 'updatedAt'
+          ])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 40
+          && request.resource.data.normalizedName is string
+          && request.resource.data.normalizedName.size() > 0
+          && request.resource.data.normalizedName.size() <= 40
+          && request.resource.data.sortOrder is int
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.deleting == false
+          && request.resource.data.createdAt is timestamp
+          && request.resource.data.updatedAt is timestamp;
+        allow update: if isGroupMember(groupId)
+          && resource.data.deleting == false
+          && request.resource.data.deleting == false
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'name', 'normalizedName', 'updatedAt'
+          ])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 40
+          && request.resource.data.normalizedName is string
+          && request.resource.data.normalizedName.size() > 0
+          && request.resource.data.normalizedName.size() <= 40
+          && request.resource.data.updatedAt is timestamp;
+        // Deletion is performed by the callable function so item references
+        // can be cleared before the category disappears.
+        allow delete: if false;
+      }
+
+      match /categoryNames/{nameKey} {
+        allow read: if isGroupMember(groupId);
+        allow create, update: if isGroupMember(groupId)
+          && request.resource.data.keys().hasAll(['categoryId', 'normalizedName'])
+          && request.resource.data.keys().hasOnly(['categoryId', 'normalizedName'])
+          && request.resource.data.categoryId is string
+          && request.resource.data.normalizedName is string
+          && request.resource.data.normalizedName.size() > 0
+          && request.resource.data.normalizedName.size() <= 40;
+        allow delete: if isGroupMember(groupId);
       }
 
       match /itemSuggestions/{suggestionId} {

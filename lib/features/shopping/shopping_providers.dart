@@ -126,6 +126,7 @@ class ShoppingController extends Notifier<AsyncValue<void>> {
     required String name,
     required int quantity,
     required String note,
+    required String? categoryId,
   }) async {
     return _run(
       (repository, user) => repository.addItem(
@@ -134,6 +135,7 @@ class ShoppingController extends Notifier<AsyncValue<void>> {
         name: name,
         quantity: quantity,
         note: note,
+        categoryId: categoryId,
       ),
       successEvent: KatteAnalyticsEvent.shoppingItemAdded,
     );
@@ -162,6 +164,7 @@ class ShoppingController extends Notifier<AsyncValue<void>> {
     required String name,
     required int quantity,
     required String note,
+    required String? categoryId,
   }) {
     if (ref.read(currentGroupProvider)?.id != groupId) {
       state = AsyncError(
@@ -177,6 +180,7 @@ class ShoppingController extends Notifier<AsyncValue<void>> {
         name: name,
         quantity: quantity,
         note: note,
+        categoryId: categoryId,
       ),
     );
   }

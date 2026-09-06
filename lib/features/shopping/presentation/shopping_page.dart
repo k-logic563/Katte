@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../categories/category_providers.dart';
+import '../../categories/models/shopping_category.dart';
 import '../../groups/group_providers.dart';
 import '../../groups/presentation/group_setup_page.dart';
 import '../models/item_suggestion.dart';
@@ -24,6 +26,7 @@ class ShoppingPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final items = ref.watch(pendingShoppingItemsProvider);
+    final categories = ref.watch(categoriesProvider);
     final group = ref.watch(currentGroupProvider);
 
     return ListView(
@@ -79,17 +82,35 @@ class ShoppingPage extends ConsumerWidget {
               },
             ),
           ],
-          data: (items) => _buildItemList(
-            items: items,
-            onAdd: () => _openAddItemSheet(context),
-            onPurchase: (item) => _purchaseItem(context, ref, item),
-            onEdit: (item) =>
-                _openEditItemSheet(context, item: item, groupId: group?.id),
-            onDelete: (item) => _confirmDeleteItem(
-              context,
-              ref,
-              item: item,
-              groupId: group?.id,
+          data: (items) => categories.when(
+            loading: () => const [
+              Padding(
+                padding: EdgeInsets.symmetric(vertical: 48),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            ],
+            error: (_, _) => [
+              _LoadError(
+                onRetry: () {
+                  if (group != null) {
+                    ref.invalidate(categoriesByGroupProvider(group.id));
+                  }
+                },
+              ),
+            ],
+            data: (categories) => _buildItemList(
+              items: items,
+              categories: categories,
+              onAdd: () => _openAddItemSheet(context),
+              onPurchase: (item) => _purchaseItem(context, ref, item),
+              onEdit: (item) =>
+                  _openEditItemSheet(context, item: item, groupId: group?.id),
+              onDelete: (item) => _confirmDeleteItem(
+                context,
+                ref,
+                item: item,
+                groupId: group?.id,
+              ),
             ),
           ),
         ),
@@ -119,6 +140,7 @@ class ShoppingPage extends ConsumerWidget {
 
   List<Widget> _buildItemList({
     required List<ShoppingItem> items,
+    required List<ShoppingCategory> categories,
     required VoidCallback onAdd,
     required Future<void> Function(ShoppingItem) onPurchase,
     required Future<void> Function(ShoppingItem) onEdit,
@@ -128,14 +150,37 @@ class ShoppingPage extends ConsumerWidget {
       return [_EmptyState(onAdd: onAdd)];
     }
 
+    final knownIds = categories.map((category) => category.id).toSet();
+    final grouped = <String?, List<ShoppingItem>>{};
+    for (final item in items) {
+      final key = knownIds.contains(item.categoryId) ? item.categoryId : null;
+      grouped.putIfAbsent(key, () => []).add(item);
+    }
+    final sections = <({String name, List<ShoppingItem> items})>[
+      for (final category in categories)
+        if (grouped[category.id]?.isNotEmpty ?? false)
+          (name: category.name, items: grouped[category.id]!),
+      if (grouped[null]?.isNotEmpty ?? false)
+        (name: '未分類', items: grouped[null]!),
+    ];
+
     return [
-      for (final item in items)
-        _ShoppingItemTile(
-          item: item,
-          onPurchase: () => onPurchase(item),
-          onEdit: () => onEdit(item),
-          onDelete: () => onDelete(item),
+      for (final section in sections) ...[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
+          child: Text(
+            '${section.name}  ${section.items.length}',
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
         ),
+        for (final item in section.items)
+          _ShoppingItemTile(
+            item: item,
+            onPurchase: () => onPurchase(item),
+            onEdit: () => onEdit(item),
+            onDelete: () => onDelete(item),
+          ),
+      ],
       const SizedBox(height: 16),
       SizedBox(
         width: double.infinity,
@@ -583,6 +628,7 @@ class _EditItemSheetState extends ConsumerState<_EditItemSheet> {
   late final TextEditingController _nameController;
   late final TextEditingController _quantityController;
   late final TextEditingController _noteController;
+  late String? _categoryId;
   var _isSubmitting = false;
   String? _errorMessage;
 
@@ -594,6 +640,7 @@ class _EditItemSheetState extends ConsumerState<_EditItemSheet> {
       text: widget.item.quantity.toString(),
     );
     _noteController = TextEditingController(text: widget.item.note);
+    _categoryId = widget.item.categoryId;
   }
 
   @override
@@ -609,7 +656,8 @@ class _EditItemSheetState extends ConsumerState<_EditItemSheet> {
     final quantity = quantityText.isEmpty ? 1 : int.tryParse(quantityText);
     return _nameController.text.trim() != widget.item.name ||
         quantity != widget.item.quantity ||
-        _noteController.text.trim() != widget.item.note;
+        _noteController.text.trim() != widget.item.note ||
+        _categoryId != widget.item.categoryId;
   }
 
   Future<void> _submit() async {
@@ -621,6 +669,11 @@ class _EditItemSheetState extends ConsumerState<_EditItemSheet> {
       _errorMessage = null;
     });
     final quantityText = _quantityController.text.trim();
+    final categories =
+        ref.read(categoriesByGroupProvider(widget.groupId)).value ?? const [];
+    final categoryId = categories.any((category) => category.id == _categoryId)
+        ? _categoryId
+        : null;
     final succeeded = await ref
         .read(shoppingControllerProvider.notifier)
         .updateItem(
@@ -629,6 +682,7 @@ class _EditItemSheetState extends ConsumerState<_EditItemSheet> {
           name: _nameController.text.trim(),
           quantity: quantityText.isEmpty ? 1 : int.parse(quantityText),
           note: _noteController.text.trim(),
+          categoryId: categoryId,
         );
     if (!mounted) {
       return;
@@ -649,6 +703,12 @@ class _EditItemSheetState extends ConsumerState<_EditItemSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final categories =
+        ref.watch(categoriesByGroupProvider(widget.groupId)).value ?? const [];
+    final selectedCategoryId =
+        categories.any((category) => category.id == _categoryId)
+        ? _categoryId
+        : null;
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
@@ -696,6 +756,12 @@ class _EditItemSheetState extends ConsumerState<_EditItemSheet> {
                 decoration: const InputDecoration(labelText: 'メモ（任意）'),
                 onChanged: (_) => setState(() {}),
                 onFieldSubmitted: (_) => _submit(),
+              ),
+              const SizedBox(height: 12),
+              _CategoryDropdown(
+                categories: categories,
+                value: selectedCategoryId,
+                onChanged: (value) => setState(() => _categoryId = value),
               ),
               if (_errorMessage != null) ...[
                 const SizedBox(height: 12),
@@ -753,6 +819,7 @@ class _AddItemSheetState extends ConsumerState<_AddItemSheet> {
   final _quantityController = TextEditingController();
   final _noteController = TextEditingController();
   String? _errorMessage;
+  String? _categoryId;
 
   @override
   void dispose() {
@@ -776,6 +843,7 @@ class _AddItemSheetState extends ConsumerState<_AddItemSheet> {
           name: _nameController.text.trim(),
           quantity: quantityText.isEmpty ? 1 : int.parse(quantityText),
           note: note,
+          categoryId: _categoryId,
         );
     if (!mounted) {
       return;
@@ -790,6 +858,7 @@ class _AddItemSheetState extends ConsumerState<_AddItemSheet> {
   @override
   Widget build(BuildContext context) {
     final isSaving = ref.watch(shoppingControllerProvider).isLoading;
+    final categories = ref.watch(categoriesProvider).value ?? const [];
     final suggestions = rankItemSuggestions(
       ref.watch(itemSuggestionsProvider).value ?? const [],
       _nameController.text,
@@ -876,6 +945,12 @@ class _AddItemSheetState extends ConsumerState<_AddItemSheet> {
                   }
                 },
               ),
+              const SizedBox(height: 12),
+              _CategoryDropdown(
+                categories: categories,
+                value: _categoryId,
+                onChanged: (value) => setState(() => _categoryId = value),
+              ),
               if (_errorMessage != null) ...[
                 const SizedBox(height: 12),
                 Text(
@@ -898,6 +973,37 @@ class _AddItemSheetState extends ConsumerState<_AddItemSheet> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _CategoryDropdown extends StatelessWidget {
+  const _CategoryDropdown({
+    required this.categories,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final List<ShoppingCategory> categories;
+  final String? value;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<String?>(
+      key: const Key('item-category-field'),
+      initialValue: value,
+      isExpanded: true,
+      decoration: const InputDecoration(labelText: 'カテゴリ（任意）'),
+      items: [
+        const DropdownMenuItem<String?>(value: null, child: Text('未分類')),
+        for (final category in categories)
+          DropdownMenuItem<String?>(
+            value: category.id,
+            child: Text(category.name, overflow: TextOverflow.ellipsis),
+          ),
+      ],
+      onChanged: onChanged,
     );
   }
 }

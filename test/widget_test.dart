@@ -8,6 +8,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:katte/app.dart';
 import 'package:katte/features/auth/application/auth_providers.dart';
 import 'package:katte/features/auth/application/auth_service.dart';
+import 'package:katte/features/categories/category_providers.dart';
+import 'package:katte/features/categories/category_repository.dart';
+import 'package:katte/features/categories/models/shopping_category.dart';
 import 'package:katte/features/groups/group_providers.dart';
 import 'package:katte/features/groups/group_repository.dart'
     hide fallbackUserDisplayName;
@@ -59,6 +62,67 @@ void main() {
 
     expect(normalized, 'milk / 1l');
     expect(itemSuggestionDocumentId(normalized), isNot(contains('/')));
+  });
+
+  test('Category名はtrim・単純なcase正規化と入力Validationを行う', () {
+    expect(normalizeCategoryName('  FOOD  '), 'food');
+    expect(categoryNameDocumentId('  FOOD  '), categoryNameDocumentId('food'));
+    expect(categoryNameDocumentId('食品/日用品'), isNot(contains('/')));
+    expect(validateCategoryName('   '), isNotNull);
+    expect(validateCategoryName('食材\n日用品'), isNotNull);
+    expect(validateCategoryName('食材'), isNull);
+  });
+
+  testWidgets('Shopping ListはCategory順でSection表示し未分類を最後にする', (tester) async {
+    final food = ShoppingCategory(
+      id: 'food',
+      name: '食材',
+      normalizedName: '食材',
+      sortOrder: 1,
+      createdAt: DateTime.now(),
+    );
+    await _pumpApp(
+      tester,
+      initialUser: testUser,
+      initialItems: [
+        _item(id: 'battery', name: '電池'),
+        _item(id: 'milk', name: '牛乳', categoryId: food.id),
+      ],
+      categoryRepository: FakeCategoryRepository(
+        categoriesByGroup: {
+          testGroup.id: [food],
+        },
+      ),
+    );
+
+    expect(find.text('食材  1'), findsOneWidget);
+    expect(find.text('未分類  1'), findsOneWidget);
+    final foodY = tester.getTopLeft(find.text('食材  1')).dy;
+    final uncategorizedY = tester.getTopLeft(find.text('未分類  1')).dy;
+    expect(foodY, lessThan(uncategorizedY));
+  });
+
+  testWidgets('Category登録後にRealtime更新してDialogを安全に閉じる', (tester) async {
+    final categories = FakeCategoryRepository();
+    await _pumpApp(
+      tester,
+      initialUser: testUser,
+      categoryRepository: categories,
+    );
+
+    await tester.tap(find.byKey(const Key('group-details-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('category-management-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('add-category-button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('category-name-field')), '食材');
+    await tester.tap(find.byKey(const Key('save-category-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('食材'), findsOneWidget);
+    expect(find.byKey(const Key('category-name-field')), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   test('Suggestionは完全一致、最近使用、useCountの順で並ぶ', () {
@@ -331,6 +395,44 @@ void main() {
     expect(repository.lastWrittenGroupId, testGroup.id);
     expect(repository.suggestion(testGroup.id, 'パン')?.useCount, 1);
     expect(analytics.events, contains(KatteAnalyticsEvent.shoppingItemAdded));
+  });
+
+  testWidgets('商品追加時にCategoryを選択して保存できる', (tester) async {
+    final repository = FakeShoppingRepository(_defaultItems());
+    final food = ShoppingCategory(
+      id: 'food',
+      name: '食材',
+      normalizedName: '食材',
+      sortOrder: 1,
+      createdAt: DateTime.now(),
+    );
+    await _pumpApp(
+      tester,
+      initialUser: testUser,
+      shoppingRepository: repository,
+      categoryRepository: FakeCategoryRepository(
+        categoriesByGroup: {
+          testGroup.id: [food],
+        },
+      ),
+    );
+
+    final openButton = find.byKey(const Key('open-add-item-sheet-button'));
+    await tester.ensureVisible(openButton);
+    await tester.tap(openButton);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('item-name-field')), 'りんご');
+    await tester.ensureVisible(find.byKey(const Key('item-category-field')));
+    await tester.tap(find.byKey(const Key('item-category-field')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('食材').last);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('add-item-button')));
+    await tester.tap(find.byKey(const Key('add-item-button')));
+    await tester.pumpAndSettle();
+
+    expect(repository.item(testGroup.id, 'new-1')?.categoryId, food.id);
+    expect(find.text('食材  1'), findsOneWidget);
   });
 
   testWidgets('履歴0件ではSuggestion sectionを表示しない', (tester) async {
@@ -1628,6 +1730,7 @@ Future<FakeAuthService> _pumpApp(
   List<ShoppingItem>? initialItems,
   GroupRepository? groupRepository,
   ShoppingRepository? shoppingRepository,
+  CategoryRepository? categoryRepository,
   NotificationService? notificationService,
   AnalyticsService? analyticsService,
   CrashReportingService? crashReportingService,
@@ -1640,6 +1743,7 @@ Future<FakeAuthService> _pumpApp(
   final shopping =
       shoppingRepository ??
       FakeShoppingRepository(initialItems ?? _defaultItems());
+  final categories = categoryRepository ?? FakeCategoryRepository();
   final notifications = notificationService ?? FakeNotificationService();
   final analytics = analyticsService ?? FakeAnalyticsService();
   final crashReporting = crashReportingService ?? FakeCrashReportingService();
@@ -1650,6 +1754,9 @@ Future<FakeAuthService> _pumpApp(
   if (shopping is FakeShoppingRepository) {
     addTearDown(shopping.dispose);
   }
+  if (categories is FakeCategoryRepository) {
+    addTearDown(categories.dispose);
+  }
   if (notifications is FakeNotificationService) {
     addTearDown(notifications.dispose);
   }
@@ -1659,6 +1766,7 @@ Future<FakeAuthService> _pumpApp(
         authServiceProvider.overrideWithValue(authService),
         groupRepositoryProvider.overrideWithValue(groups),
         shoppingRepositoryProvider.overrideWithValue(shopping),
+        categoryRepositoryProvider.overrideWithValue(categories),
         notificationServiceProvider.overrideWithValue(notifications),
         analyticsServiceProvider.overrideWithValue(analytics),
         crashReportingServiceProvider.overrideWithValue(crashReporting),
@@ -1940,6 +2048,7 @@ class FakeShoppingRepository implements ShoppingRepository {
     required String name,
     required int quantity,
     required String note,
+    required String? categoryId,
   }) async {
     lastWrittenGroupId = groupId;
     final now = DateTime.now();
@@ -1951,6 +2060,7 @@ class FakeShoppingRepository implements ShoppingRepository {
         name: name,
         quantity: quantity,
         note: note,
+        categoryId: categoryId,
         status: ShoppingItemStatus.pending,
         createdBy: user.uid,
         createdByName: user.displayName ?? fallbackUserDisplayName,
@@ -2014,6 +2124,7 @@ class FakeShoppingRepository implements ShoppingRepository {
             name: item.name,
             quantity: item.quantity,
             note: item.note,
+            categoryId: item.categoryId,
             status: isPurchased
                 ? ShoppingItemStatus.purchased
                 : ShoppingItemStatus.pending,
@@ -2041,6 +2152,7 @@ class FakeShoppingRepository implements ShoppingRepository {
     required String name,
     required int quantity,
     required String note,
+    required String? categoryId,
   }) async {
     editCallCount++;
     if (failEdit) {
@@ -2069,6 +2181,7 @@ class FakeShoppingRepository implements ShoppingRepository {
       name: name.trim(),
       quantity: quantity,
       note: note.trim(),
+      categoryId: categoryId,
       status: current.status,
       createdBy: current.createdBy,
       createdByName: current.createdByName,
@@ -2131,6 +2244,64 @@ class FakeShoppingRepository implements ShoppingRepository {
   void dispose() => _controller.close();
 }
 
+class FakeCategoryRepository implements CategoryRepository {
+  FakeCategoryRepository({
+    Map<String, List<ShoppingCategory>>? categoriesByGroup,
+  }) : _categoriesByGroup = {
+         for (final entry in (categoriesByGroup ?? const {}).entries)
+           entry.key: [...entry.value],
+       };
+
+  final _controller = StreamController<String>.broadcast();
+  final Map<String, List<ShoppingCategory>> _categoriesByGroup;
+
+  @override
+  Stream<List<ShoppingCategory>> watchCategories(String groupId) async* {
+    yield List.unmodifiable(_categoriesByGroup[groupId] ?? const []);
+    yield* _controller.stream
+        .where((changedGroupId) => changedGroupId == groupId)
+        .map((_) => List.unmodifiable(_categoriesByGroup[groupId] ?? const []));
+  }
+
+  @override
+  Future<void> createCategory({
+    required String groupId,
+    required String userId,
+    required String name,
+  }) async {
+    final values = _categoriesByGroup.putIfAbsent(groupId, () => []);
+    final normalizedName = normalizeCategoryName(name);
+    if (values.any((category) => category.normalizedName == normalizedName)) {
+      throw const DuplicateCategoryException();
+    }
+    values.add(
+      ShoppingCategory(
+        id: 'category-${values.length + 1}',
+        name: name.trim(),
+        normalizedName: normalizedName,
+        sortOrder: values.length,
+        createdAt: DateTime.now(),
+      ),
+    );
+    _controller.add(groupId);
+  }
+
+  @override
+  Future<void> renameCategory({
+    required String groupId,
+    required ShoppingCategory category,
+    required String name,
+  }) async {}
+
+  @override
+  Future<void> deleteCategory({
+    required String groupId,
+    required String categoryId,
+  }) async {}
+
+  void dispose() => _controller.close();
+}
+
 class PermissionDeniedShoppingRepository implements ShoppingRepository {
   @override
   Stream<List<ShoppingItem>> watchPendingItems(String groupId) {
@@ -2163,6 +2334,7 @@ class PermissionDeniedShoppingRepository implements ShoppingRepository {
     required String name,
     required int quantity,
     required String note,
+    required String? categoryId,
   }) async {}
 
   @override
@@ -2180,6 +2352,7 @@ class PermissionDeniedShoppingRepository implements ShoppingRepository {
     required String name,
     required int quantity,
     required String note,
+    required String? categoryId,
   }) async {}
 
   @override
@@ -2246,6 +2419,7 @@ ShoppingItem _item({
   String? purchasedBy,
   String? purchasedByName,
   DateTime? purchasedAt,
+  String? categoryId,
 }) {
   final now = DateTime.now();
   return ShoppingItem(
@@ -2253,6 +2427,7 @@ ShoppingItem _item({
     name: name,
     quantity: quantity,
     note: '',
+    categoryId: categoryId,
     status: status,
     createdBy: createdBy,
     createdByName: createdByName,

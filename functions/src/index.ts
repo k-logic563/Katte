@@ -18,6 +18,75 @@ const region = "us-central1";
 const multicastLimit = 500;
 const deleteBatchLimit = 450;
 
+export const deleteCategory = onCall(
+  {region},
+  async (request) => {
+    const userId = request.auth?.uid;
+    const rawGroupId = request.data?.groupId;
+    const rawCategoryId = request.data?.categoryId;
+    if (!userId) {
+      throw new HttpsError("unauthenticated", "Authentication is required.");
+    }
+    if (
+      typeof rawGroupId !== "string" || rawGroupId.trim().length === 0 ||
+      typeof rawCategoryId !== "string" || rawCategoryId.trim().length === 0
+    ) {
+      throw new HttpsError("invalid-argument", "Group and category are required.");
+    }
+    const groupId = rawGroupId.trim();
+    const categoryId = rawCategoryId.trim();
+    const firestore = getFirestore();
+    const groupReference = firestore.collection("groups").doc(groupId);
+    const member = await groupReference.collection("members").doc(userId).get();
+    if (!member.exists) {
+      throw new HttpsError("permission-denied", "Group membership is required.");
+    }
+    const categoryReference = groupReference
+      .collection("categories")
+      .doc(categoryId);
+    const category = await categoryReference.get();
+    if (!category.exists) {
+      throw new HttpsError("not-found", "The category does not exist.");
+    }
+    await categoryReference.update({deleting: true, updatedAt: new Date()});
+
+    let itemCount = 0;
+    while (true) {
+      const items = await groupReference
+        .collection("items")
+        .where("categoryId", "==", categoryId)
+        .limit(deleteBatchLimit)
+        .get();
+      if (items.empty) {
+        break;
+      }
+      const batch = firestore.batch();
+      for (const item of items.docs) {
+        batch.update(item.ref, {
+          categoryId: null,
+          updatedAt: new Date(),
+        });
+      }
+      await batch.commit();
+      itemCount += items.size;
+    }
+
+    const normalizedName = category.get("normalizedName");
+    if (typeof normalizedName === "string") {
+      const nameKey = Buffer.from(normalizedName, "utf8")
+        .toString("base64url");
+      await groupReference.collection("categoryNames").doc(nameKey).delete();
+    }
+    await categoryReference.delete();
+    logger.info("Category deleted.", {
+      groupId,
+      categoryId,
+      itemCount,
+    });
+    return {deleted: true};
+  },
+);
+
 export const deleteGroup = onCall(
   {region},
   async (request) => {
