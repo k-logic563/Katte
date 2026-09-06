@@ -1,0 +1,178 @@
+:root {
+  color-scheme: light;
+  --accent: #2f8277;
+  --accent-dark: #155e57;
+  --ink: #17201f;
+  --muted: #5d6866;
+  --line: #dfe6e4;
+  --surface: #f7faf9;
+  --max-width: 760px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans JP",
+    sans-serif;
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--ink);
+  background: #fff;
+}
+
+body {
+  margin: 0;
+}
+
+a {
+  color: var(--accent-dark);
+  text-underline-offset: 0.2em;
+}
+
+a:hover {
+  text-decoration-thickness: 2px;
+}
+
+a:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 55%, white);
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+
+.site-header,
+.site-footer,
+main {
+  width: min(100% - 40px, var(--max-width));
+  margin-inline: auto;
+}
+
+.site-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding-block: 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  color: var(--ink);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+}
+
+.site-nav {
+  display: flex;
+  gap: 18px;
+  font-size: 0.9rem;
+}
+
+main {
+  padding-block: clamp(48px, 9vw, 88px) 80px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: var(--accent-dark);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(2rem, 7vw, 3.25rem);
+}
+
+h2 {
+  margin: 0 0 18px;
+  font-size: clamp(1.35rem, 4vw, 1.65rem);
+}
+
+h3 {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+}
+
+p,
+ul {
+  margin-block: 0 1em;
+}
+
+ul {
+  padding-left: 1.35em;
+}
+
+.lead {
+  max-width: 640px;
+  margin-top: 20px;
+  color: var(--muted);
+  font-size: 1.08rem;
+}
+
+.meta {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.section {
+  padding-block: 36px;
+  border-top: 1px solid var(--line);
+}
+
+.section:first-of-type {
+  margin-top: 48px;
+}
+
+.faq {
+  padding-block: 22px;
+}
+
+.faq + .faq {
+  border-top: 1px solid var(--line);
+}
+
+.notice {
+  padding: 18px 20px;
+  border-left: 4px solid var(--accent);
+  background: var(--surface);
+}
+
+.site-footer {
+  padding-block: 28px 40px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 520px) {
+  .site-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .site-nav {
+    gap: 16px;
+  }
+
+  main {
+    padding-top: 44px;
+  }
+
+  .section {
+    padding-block: 30px;
+  }
+}

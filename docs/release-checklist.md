@@ -90,8 +90,9 @@ Broker用途、クロスアプリtrackingはない。
 ## Store metadata and test
 
 - [x] Store copy、Subtitle、Keywords、Review Notes、Screenshot storyを`docs/store-listing.md`に作成
-- [ ] **BLOCKER:** Support URLを公開
-- [ ] **BLOCKER:** Privacy Policy URLを公開
+- [x] Support / Privacy静的ページを`/katte/support`、`/katte/privacy`に実装
+- [ ] **BLOCKER:** 公開用DomainへSupport / Privacyページをdeployし、到達確認
+- [x] Support / Privacyページの運営者名・問い合わせメールを確定
 - [ ] **MUST FIX:** 個人情報を含まない正式Screenshotを実機で作成
 - [ ] App Store Connect app record / App Privacy / metadata / screenshots
 - [ ] Play Console app record / Data Safety / app access / rating / audience / ads
