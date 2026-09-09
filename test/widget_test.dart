@@ -181,8 +181,71 @@ void main() {
     );
     expect(find.byKey(const Key('brand-app-icon')), findsOneWidget);
     expect(find.text('Katte'), findsOneWidget);
-    expect(find.text('家族の「買っといて」を、\nリアルタイムで共有。'), findsOneWidget);
-    expect(find.text('Googleで続ける'), findsOneWidget);
+    expect(find.text('家族の「買っといて」を、\nもっと気軽に。'), findsOneWidget);
+    expect(find.text('続行する方法を選択'), findsOneWidget);
+    expect(find.text('Googleで続ける'), findsNothing);
+    expect(find.text('Appleでサインイン'), findsNothing);
+    expect(find.byKey(const Key('google-logo')), findsOneWidget);
+    expect(find.byKey(const Key('apple-logo')), findsOneWidget);
+    expect(find.bySemanticsLabel('Googleで続ける'), findsOneWidget);
+    expect(find.bySemanticsLabel('Appleでサインイン'), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const Key('google-login-button'))),
+      tester.getSize(find.byKey(const Key('apple-login-button'))),
+    );
+    final googleFinder = find.byKey(const Key('google-login-button'));
+    final appleFinder = find.byKey(const Key('apple-login-button'));
+    final googleRect = tester.getRect(googleFinder);
+    final appleRect = tester.getRect(appleFinder);
+    final googleCenter = googleRect.center;
+    final appleCenter = appleRect.center;
+    expect(googleRect.height, 64);
+    expect(googleRect.width, greaterThan(120));
+    expect(googleCenter.dy, appleCenter.dy);
+    expect(appleRect.left - googleRect.right, 16);
+    final googleButton = tester.widget<OutlinedButton>(googleFinder);
+    final appleButton = tester.widget<OutlinedButton>(appleFinder);
+    expect(
+      googleButton.style?.side?.resolve(<WidgetState>{}),
+      appleButton.style?.side?.resolve(<WidgetState>{}),
+    );
+  });
+
+  testWidgets('小さいiPhoneでもLogin選択肢が崩れない', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(320, 568));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await _pumpApp(tester);
+
+    expect(find.byKey(const Key('brand-app-icon')), findsOneWidget);
+    expect(find.byKey(const Key('google-login-button')), findsOneWidget);
+    expect(find.byKey(const Key('apple-login-button')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Login中は両Providerを無効化して進捗を表示する', (tester) async {
+    final auth = await _pumpApp(tester);
+    auth.googleSignInCompleter = Completer<void>();
+
+    await tester.tap(find.byKey(const Key('google-login-button')));
+    await tester.pump();
+
+    expect(
+      tester
+          .widget<OutlinedButton>(find.byKey(const Key('google-login-button')))
+          .onPressed,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<OutlinedButton>(find.byKey(const Key('apple-login-button')))
+          .onPressed,
+      isNull,
+    );
+    expect(find.bySemanticsLabel('ログインしています'), findsOneWidget);
+
+    auth.googleSignInCompleter!.complete();
+    await tester.pumpAndSettle();
   });
 
   testWidgets('Google Login後に所属GroupのShoppingへ進む', (tester) async {
@@ -195,6 +258,28 @@ void main() {
     expect(find.text('岩田家'), findsOneWidget);
     expect(find.byKey(const Key('purchase-history-button')), findsOneWidget);
     expect(analytics.events, contains(KatteAnalyticsEvent.login));
+  });
+
+  testWidgets('Apple Login後に所属GroupのShoppingへ進む', (tester) async {
+    final auth = await _pumpApp(tester);
+
+    await tester.tap(find.byKey(const Key('apple-login-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('岩田家'), findsOneWidget);
+    expect(auth.appleSignInCount, 1);
+  });
+
+  testWidgets('Apple Loginのキャンセルはエラー表示せずLoginに留まる', (tester) async {
+    final auth = await _pumpApp(tester);
+    auth.appleSignInError = AuthCancelledException();
+
+    await tester.tap(find.byKey(const Key('apple-login-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('apple-login-button')), findsOneWidget);
+    expect(find.byType(SnackBar), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('ログイン後に通知Permission・Token登録処理を開始する', (tester) async {
@@ -1483,11 +1568,40 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Katte'), findsOneWidget);
-    expect(find.text('Googleで続ける'), findsOneWidget);
+    expect(find.bySemanticsLabel('Googleで続ける'), findsOneWidget);
     expect(find.text('岩田家'), findsNothing);
     expect(notifications.unregisteredUserIds, [testUser.uid]);
     expect(crashReporting.userIdentifiers, contains(testUser.uid));
     expect(crashReporting.userIdentifiers.last, isNull);
+  });
+
+  testWidgets('Settingsから確認後にAccountを削除してLoginへ戻る', (tester) async {
+    final notifications = FakeNotificationService();
+    final auth = await _pumpApp(
+      tester,
+      initialUser: testUser,
+      notificationService: notifications,
+    );
+    await tester.tap(find.text('設定'));
+    await tester.pumpAndSettle();
+    final deleteButton = find.byKey(const Key('delete-account-button'));
+    await tester.scrollUntilVisible(
+      deleteButton,
+      300,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.tap(deleteButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('アカウントを削除しますか？'), findsOneWidget);
+    expect(find.textContaining('この操作は元に戻せません。'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('confirm-delete-account')));
+    await tester.pumpAndSettle();
+
+    expect(auth.deleteAccountCount, 1);
+    expect(notifications.unregisteredUserIds, [testUser.uid]);
+    expect(find.bySemanticsLabel('Googleで続ける'), findsOneWidget);
+    expect(find.bySemanticsLabel('Appleでサインイン'), findsOneWidget);
   });
 
   testWidgets('通知タップ時は対象Groupへ切り替えてShoppingへ戻る', (tester) async {
@@ -1811,6 +1925,10 @@ class FakeAuthService implements AuthService {
 
   final _controller = StreamController<AuthUser?>.broadcast();
   AuthUser? _currentUser;
+  int appleSignInCount = 0;
+  int deleteAccountCount = 0;
+  Completer<void>? googleSignInCompleter;
+  Object? appleSignInError;
 
   @override
   Stream<AuthUser?> authStateChanges() async* {
@@ -1819,7 +1937,26 @@ class FakeAuthService implements AuthService {
   }
 
   @override
-  Future<void> signInWithGoogle() async => _setUser(testUser);
+  Future<void> signInWithGoogle() async {
+    await googleSignInCompleter?.future;
+    _setUser(testUser);
+  }
+
+  @override
+  Future<void> signInWithApple() async {
+    appleSignInCount++;
+    final error = appleSignInError;
+    if (error != null) {
+      throw error;
+    }
+    _setUser(testUser);
+  }
+
+  @override
+  Future<void> deleteAccount() async {
+    deleteAccountCount++;
+    _setUser(null);
+  }
 
   @override
   Future<void> signOut() async => _setUser(null);
@@ -1838,6 +1975,12 @@ class PendingAuthService implements AuthService {
 
   @override
   Future<void> signInWithGoogle() async {}
+
+  @override
+  Future<void> signInWithApple() async {}
+
+  @override
+  Future<void> deleteAccount() async {}
 
   @override
   Future<void> signOut() async {}

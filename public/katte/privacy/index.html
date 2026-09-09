@@ -24,14 +24,14 @@
       <section class="section" aria-labelledby="information-heading">
         <h2 id="information-heading">1. 取得・保存する情報</h2>
         <ul>
-          <li>Googleログインにより提供される表示名、メールアドレス、プロフィール画像URL、およびFirebase AuthenticationのユーザーID</li>
+          <li>GoogleまたはAppleログインにより提供される表示名、メールアドレス、プロフィール画像URL（提供される場合）、およびFirebase AuthenticationのユーザーID</li>
           <li>グループ名、招待コード、グループへの所属および権限</li>
           <li>商品名、個数、メモ、カテゴリ、追加者、購入状態、購入者、作成・更新日時、購入履歴および商品名候補の利用履歴</li>
           <li>Push通知の配信に必要な登録情報（通知用トークン、アプリが生成する端末識別子、端末種別、通知設定）</li>
           <li>アプリの画面表示や主要操作などの利用状況</li>
           <li>クラッシュ、エラー、スタックトレースなどの診断情報、および不具合調査用のFirebaseユーザーID</li>
         </ul>
-        <p>ユーザーがGoogleアカウントへ入力するパスワードを、Katteが取得または保存することはありません。</p>
+        <p>ユーザーがGoogleまたはAppleアカウントへ入力するパスワードを、Katteが取得または保存することはありません。Appleで「メールを非公開」を選択した場合、AppleのPrivate Relayメールアドレスが保存される場合があります。</p>
       </section>
 
       <section class="section" aria-labelledby="content-heading">
@@ -55,7 +55,7 @@
 
       <section class="section" aria-labelledby="services-heading">
         <h2 id="services-heading">4. 外部サービス</h2>
-        <p>Katteは、Google LLCが提供するGoogle Sign-InおよびFirebase（Authentication、Cloud Firestore、Cloud Functions、Cloud Messaging、Analytics、Crashlytics）を利用します。情報は、サービス提供に必要な範囲で各サービスへ送信され、各提供者の規定に基づいて処理されます。</p>
+        <p>Katteは、Google LLCが提供するGoogle Sign-In、Apple Inc.が提供するSign in with Apple、およびFirebase（Authentication、Cloud Firestore、Cloud Functions、Cloud Messaging、Analytics、Crashlytics）を利用します。情報は、サービス提供に必要な範囲で各サービスへ送信され、各提供者の規定に基づいて処理されます。</p>
         <ul>
           <li><a href="https://policies.google.com/privacy?hl=ja" target="_blank" rel="noopener noreferrer">Google プライバシーポリシー</a></li>
           <li><a href="https://firebase.google.com/support/privacy?hl=ja" target="_blank" rel="noopener noreferrer">Firebaseのプライバシーとセキュリティ</a></li>
@@ -71,7 +71,7 @@
       <section class="section" aria-labelledby="retention-heading">
         <h2 id="retention-heading">6. 保存期間とデータ削除</h2>
         <p>ユーザー情報は、アプリ機能の提供および運営に必要な期間保存します。未購入の商品はアプリ内で個別に削除できます。グループのオーナーがグループを削除すると、そのグループの買い物情報、カテゴリ、購入履歴などの共有データが削除されます。メンバーが退出した場合、グループの共有データは他のメンバーのために保持されます。</p>
-        <p>現在、アプリ内のアカウント削除機能はありません。アカウントおよび関連データの削除を希望する場合は、<a href="/katte/support#contact-heading">サポートページのお問い合わせ先</a>からご連絡ください。共有データは他のメンバーへの影響を確認した上で対応します。</p>
+        <p>アプリ内の「設定」からアカウントを削除できます。削除時は認証アカウント、プロフィール、端末・通知情報、グループ所属情報を削除します。他のメンバーと共有されている買い物情報、カテゴリ、購入履歴は保持します。本人のみが所属する所有グループは共有データごと削除します。他のメンバーがいる所有グループは、先にそのグループを削除する必要があります。</p>
       </section>
 
       <section class="section" aria-labelledby="security-heading">

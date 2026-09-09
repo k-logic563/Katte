@@ -1,5 +1,10 @@
 import {initializeApp} from "firebase-admin/app";
-import {getFirestore} from "firebase-admin/firestore";
+import {getAuth} from "firebase-admin/auth";
+import {
+  DocumentReference,
+  Firestore,
+  getFirestore,
+} from "firebase-admin/firestore";
 import {getMessaging} from "firebase-admin/messaging";
 import {logger} from "firebase-functions";
 import {HttpsError, onCall} from "firebase-functions/v2/https";
@@ -124,39 +129,15 @@ export const deleteGroup = onCall(
         throw new HttpsError("failed-precondition", "The invite is invalid.");
       }
 
-      // Remove the invite first so no new member can join while cleanup runs.
-      await firestore.collection("groupInvites").doc(inviteCode).delete();
-      const members = await groupReference.collection("members").get();
-      const memberIds = members.docs.map((member) => member.id);
-
-      // recursiveDelete explicitly removes the group and every nested document,
-      // including members and shopping items.
-      await firestore.recursiveDelete(groupReference);
-
-      for (
-        let offset = 0;
-        offset < memberIds.length;
-        offset += deleteBatchLimit
-      ) {
-        const batch = firestore.batch();
-        for (const memberId of memberIds.slice(
-          offset,
-          offset + deleteBatchLimit,
-        )) {
-          batch.delete(
-            firestore
-              .collection("users")
-              .doc(memberId)
-              .collection("groups")
-              .doc(groupId),
-          );
-        }
-        await batch.commit();
-      }
+      const memberCount = await recursivelyDeleteGroup(
+        firestore,
+        groupReference,
+        inviteCode,
+      );
 
       logger.info("Group deleted.", {
         groupId,
-        memberCount: memberIds.length,
+        memberCount,
       });
       return {deleted: true};
     } catch (error) {
@@ -171,6 +152,191 @@ export const deleteGroup = onCall(
     }
   },
 );
+
+export const deleteAccount = onCall(
+  {region},
+  async (request) => {
+    const userId = request.auth?.uid;
+    if (!userId) {
+      throw new HttpsError("unauthenticated", "Authentication is required.");
+    }
+
+    const firestore = getFirestore();
+    try {
+      await assertAccountDeletionAllowed(firestore, userId);
+      // The collection-group query also catches membership documents if a
+      // users/{uid}/groups pointer is missing or stale.
+      const memberships = await firestore
+        .collectionGroup("members")
+        .where("userId", "==", userId)
+        .get();
+      const ownerGroups: Array<{
+        reference: DocumentReference;
+        inviteCode: unknown;
+      }> = [];
+      const memberGroups: DocumentReference[] = [];
+
+      for (const membership of memberships.docs) {
+        const groupReference = membership.ref.parent.parent;
+        if (groupReference === null) {
+          continue;
+        }
+        if (membership.get("role") === "owner") {
+          const group = await groupReference.get();
+          if (!group.exists) {
+            memberGroups.push(groupReference);
+            continue;
+          }
+          const members = await groupReference
+            .collection("members")
+            .limit(2)
+            .get();
+          if (members.docs.some((member) => member.id !== userId)) {
+            throw new HttpsError(
+              "failed-precondition",
+              "Delete groups with other members before deleting the account.",
+            );
+          }
+          ownerGroups.push({
+            reference: groupReference,
+            inviteCode: group.get("inviteCode"),
+          });
+        } else {
+          memberGroups.push(groupReference);
+        }
+      }
+
+      // All owner checks finish before the first destructive write.
+      for (const group of ownerGroups) {
+        await recursivelyDeleteGroup(
+          firestore,
+          group.reference,
+          group.inviteCode,
+        );
+      }
+
+      for (
+        let offset = 0;
+        offset < memberGroups.length;
+        offset += deleteBatchLimit / 2
+      ) {
+        const batch = firestore.batch();
+        for (const groupReference of memberGroups.slice(
+          offset,
+          offset + deleteBatchLimit / 2,
+        )) {
+          batch.delete(groupReference.collection("members").doc(userId));
+          batch.delete(
+            firestore
+              .collection("users")
+              .doc(userId)
+              .collection("groups")
+              .doc(groupReference.id),
+          );
+        }
+        await batch.commit();
+      }
+
+      // This removes the profile, every device/FCM registration, and any stale
+      // user-side membership pointers. Shared group content is retained.
+      await firestore.recursiveDelete(firestore.collection("users").doc(userId));
+
+      // Auth is deleted last so a retry remains possible after cleanup errors.
+      await getAuth().deleteUser(userId);
+      logger.info("Account deleted.", {
+        userId,
+        ownedGroupCount: ownerGroups.length,
+        membershipCount: memberGroups.length,
+      });
+      return {deleted: true};
+    } catch (error) {
+      logger.error("Account deletion failed.", {
+        userId,
+        errorCode: getErrorCode(error),
+      });
+      if (error instanceof HttpsError) {
+        throw error;
+      }
+      throw new HttpsError("internal", "The account could not be deleted.");
+    }
+  },
+);
+
+export const checkAccountDeletion = onCall(
+  {region},
+  async (request) => {
+    const userId = request.auth?.uid;
+    if (!userId) {
+      throw new HttpsError("unauthenticated", "Authentication is required.");
+    }
+    await assertAccountDeletionAllowed(getFirestore(), userId);
+    return {allowed: true};
+  },
+);
+
+async function assertAccountDeletionAllowed(
+  firestore: Firestore,
+  userId: string,
+): Promise<void> {
+  const memberships = await firestore
+    .collectionGroup("members")
+    .where("userId", "==", userId)
+    .get();
+  for (const membership of memberships.docs) {
+    if (membership.get("role") !== "owner") {
+      continue;
+    }
+    const groupReference = membership.ref.parent.parent;
+    if (groupReference === null) {
+      continue;
+    }
+    const members = await groupReference.collection("members").limit(2).get();
+    if (members.docs.some((member) => member.id !== userId)) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Delete groups with other members before deleting the account.",
+      );
+    }
+  }
+}
+
+async function recursivelyDeleteGroup(
+  firestore: Firestore,
+  groupReference: DocumentReference,
+  inviteCode: unknown,
+): Promise<number> {
+  // Remove the invite first so no new member can join while cleanup runs.
+  if (typeof inviteCode === "string" && inviteCode.length > 0) {
+    await firestore.collection("groupInvites").doc(inviteCode).delete();
+  }
+  const members = await groupReference.collection("members").get();
+  const memberIds = members.docs.map((member) => member.id);
+
+  // recursiveDelete includes members, items, categories, and history.
+  await firestore.recursiveDelete(groupReference);
+
+  for (
+    let offset = 0;
+    offset < memberIds.length;
+    offset += deleteBatchLimit
+  ) {
+    const batch = firestore.batch();
+    for (const memberId of memberIds.slice(
+      offset,
+      offset + deleteBatchLimit,
+    )) {
+      batch.delete(
+        firestore
+          .collection("users")
+          .doc(memberId)
+          .collection("groups")
+          .doc(groupReference.id),
+      );
+    }
+    await batch.commit();
+  }
+  return memberIds.length;
+}
 
 export const sendShoppingItemCreatedNotification = onDocumentCreated(
   {

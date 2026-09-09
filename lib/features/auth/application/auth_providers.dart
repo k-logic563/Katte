@@ -27,6 +27,43 @@ class AuthController extends Notifier<AsyncValue<void>> {
     );
   }
 
+  Future<void> signInWithApple() {
+    return _run(
+      ref.read(authServiceProvider).signInWithApple,
+      successEvent: KatteAnalyticsEvent.login,
+    );
+  }
+
+  Future<bool> deleteAccount() async {
+    final user = ref.read(authStateProvider).value;
+    if (user == null) {
+      state = AsyncError(
+        const AuthFlowException('ログイン状態を確認できませんでした。'),
+        StackTrace.current,
+      );
+      return false;
+    }
+    state = const AsyncLoading();
+    try {
+      await ref.read(authServiceProvider).deleteAccount();
+      await ref.read(notificationServiceProvider).unregisterForUser(user);
+      state = const AsyncData(null);
+      return true;
+    } on AuthCancelledException {
+      state = const AsyncData(null);
+      return false;
+    } on AccountDeletionBlockedException catch (error, stackTrace) {
+      state = AsyncError(error, stackTrace);
+      return false;
+    } on Object catch (error, stackTrace) {
+      state = AsyncError(
+        const AuthFlowException('アカウントを削除できませんでした。'),
+        stackTrace,
+      );
+      return false;
+    }
+  }
+
   Future<void> signOut() {
     return _run(() async {
       final user = ref.read(authStateProvider).value;

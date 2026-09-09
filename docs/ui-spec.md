@@ -38,13 +38,25 @@ Settings
 Katte
 
 家族の「買っといて」を、
-リアルタイムで共有。
+もっと気軽に。
 
-[ Googleで続ける ]
+続行する方法を選択
+
+[ G ]  [ Apple logo ]
 ```
 
-iOS / AndroidともにGoogleログインを表示する。
-Apple Sign InはPhase 2.5またはリリース前対応とする。
+iOS / AndroidともにGoogleログインとAppleログインを、ロゴのみのカードとして横並びで
+表示する。
+
+両カードは親幅から16pxの間隔を除いた領域を`Expanded`で均等分割し、64pxの高さ、12pxの
+角丸、`#747775`の枠線を共通化する。Googleは公式標準カラーのG logoを改変せず使用し、
+Appleは`sign_in_with_apple` packageが公開する
+`AppleLogoPainter`を使用する。表示上のラベルは置かず、「Googleで続ける」および
+「Appleでサインイン」のSemantics labelを付与する。認証中は両方を無効化し、共通の
+progress indicatorを表示する。
+
+設定画面下部の「アカウント管理」から「アカウントを削除」を選び、不可逆であることを示す
+確認Dialogを経て削除する。処理中は導線を無効化して進捗を表示し、完了後はLoginへ戻る。
 
 ---
 

@@ -73,11 +73,17 @@ Katte は買い物依頼だけをリアルタイム共有することで、
 
 ユーザーはアカウントを作成してログインできる。
 
-### Phase 2
+### Release 1.0.0
 
 - Google Sign In
+- Sign in with Apple
 
-Apple Sign InはPhase 2.5またはリリース前対応として別途検討する。
+どちらのProviderでも同じGroup・買い物・通知機能を利用できる。表示名がProviderから取得
+できない場合は「ユーザー」を使用し、AppleのPrivate Relayメールも通常のメール値として扱う。
+
+設定画面からアカウントを削除できる。他MemberがいるGroupのownerは先にGroupを削除する。
+owner本人だけのGroupはアカウントと同時に削除し、memberの場合は所属だけを削除する。
+他Memberと共有する商品、カテゴリ、購入履歴は作成者UIDだけを理由に削除しない。
 
 メールアドレス認証は必要性を見て追加する。
 

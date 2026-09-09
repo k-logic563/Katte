@@ -37,11 +37,12 @@ Flutter未経験でも理解しやすく、
 
 ログイン・ユーザー認証。
 
-Phase 2ではGoogle Sign Inを利用する。
-Flutter側では `firebase_core`、`firebase_auth`、`google_sign_in` を使用し、
+Google Sign InとSign in with Appleを利用する。
+Flutter側では `firebase_core`、`firebase_auth`、`google_sign_in`、`sign_in_with_apple` を使用し、
 認証状態はRiverpod経由で `go_router` の画面制御へ反映する。
 
-Apple Sign InはPhase 2.5またはリリース前対応として別途実装する。
+Apple認証はFirebase Authのnative provider flowを使用し、アカウント削除時は再認証で得た
+authorization codeをFirebase経由でrevokeしてからserver cleanupを開始する。
 
 ### Cloud Firestore
 
@@ -84,6 +85,10 @@ Functions region指定は不要である。
 ownerによるGroup削除はCallable Functionで認証とowner roleを再検証してから実行する。
 Inviteを無効化し、Group配下をrecursive deleteしたうえで全MemberのUser所属参照を削除する。
 member本人の退出はFirestore transactionでMember documentとUser所属参照を同時に削除する。
+
+`deleteAccount` Callableは全owner Groupを先に検査し、他Memberがいれば書き込み前に停止する。
+単独owner Group、通常membership、`users/{uid}` 配下（device tokenを含む）の順に削除し、
+Firebase Auth userを最後に削除する。共有Groupのitem、category、purchase historyは保持する。
 
 ### Firebase Crashlytics
 

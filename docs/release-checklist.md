@@ -6,7 +6,7 @@ BLOCKER。全BLOCKERが解消するまでRelease Candidateとはしない。
 ## Build and identity
 
 - [x] App Version `1.0.0`
-- [x] Build Number `1`
+- [x] Build Number `2`
 - [x] App Name `Katte`
 - [x] Bundle ID / Application ID `jp.katte.app`
 - [x] iOS / Android正式App IconとSplash
@@ -16,6 +16,7 @@ BLOCKER。全BLOCKERが解消するまでRelease Candidateとはしない。
 - [x] Android compileSdk / targetSdk 36（Flutter 3.47.1既定値）
 - [x] Android releaseからdebug signingを除去
 - [x] iOS App Store IPA作成（37.9 MB、production Push entitlement、`get-task-allow=false`）
+- [x] Build 2 IPA作成（36 MB、Sign in with Apple + production Push entitlement、`get-task-allow=false`）
 - [x] Paid TeamのApp Store provisioning profileを自動生成（Team `5X4237AQY6`）
 - [ ] **BLOCKER:** production upload keystoreと`android/key.properties`を安全に作成
 - [ ] **BLOCKER:** Android SDK（API 36 / build tools）をインストールしてFlutterへ設定
@@ -28,8 +29,9 @@ BLOCKER。全BLOCKERが解消するまでRelease Candidateとはしない。
 - [x] `deleteGroup`（callable、us-central1、v2）deploy済み
 - [x] `sendShoppingItemCreatedNotification`（us-central1、v2）deploy済み
 - [x] Google Sign-In / Auth / Firestore / FCM / Analytics / Crashlytics構成あり
-- [ ] **BLOCKER (iOS):** App Review Guideline 4.8を満たす同等のLogin Service
-  （通常はSign in with Apple）を実装・実機検証
+- [x] Sign in with Apple実装、Xcode capability / entitlement追加
+- [ ] **BLOCKER (iOS):** Apple Developer / Firebase Console設定とSign in with Apple実機検証
+- [ ] **BLOCKER:** `checkAccountDeletion` / `deleteAccount` Callableをdeployして実データで検証
 - [x] Emulator、localhost、mock、test accountのproduction混入なし
 - [ ] **MUST FIX:** `katte-dev-jp`を正式公開にも使うかProduction projectを分離するか決定
 - [x] APNs key登録と2ユーザーiPhoneでPush E2E成功
@@ -42,7 +44,8 @@ BLOCKER。全BLOCKERが解消するまでRelease Candidateとはしない。
 - [x] ATT対象となる広告・クロスアプリtrackingなし
 - [x] 不要なCamera / Location / Contacts権限なし
 - [x] 依存SDKのPrivacy ManifestがRelease app bundleへ格納されることを確認
-- [ ] **BLOCKER:** アプリ内のアカウント・関連データ削除導線を実装・検証
+- [x] アプリ内のアカウント・関連データ削除導線を実装
+- [ ] **BLOCKER:** Google / Apple、owner / member各条件でアカウント削除を実機検証
 - [ ] **BLOCKER:** Google Play向けWeb削除申請ページを公開
 - [ ] **BLOCKER:** Privacy Policyの運営者・連絡先・保存/削除期間を確定して公開URLを用意
 - [ ] **BLOCKER (iOS):** 公開Privacy Policyへの見つけやすいアプリ内導線を追加
@@ -84,7 +87,7 @@ Broker用途、クロスアプリtrackingはない。
   release merge結果をAndroid SDK導入後に最終確認する
 - 不使用: Camera、Location、Contacts、Microphone、Photos
 - Firebase: Core、Auth、Firestore、Functions、Messaging、Analytics、Crashlytics
-- Google Sign-In、Google Fonts（font asset同梱）、Riverpod、go_router、SharedPreferences、
+- Google Sign-In、Sign in with Apple、Google Fonts（font asset同梱）、Riverpod、go_router、SharedPreferences、
   flutter_local_notifications
 
 ## Store metadata and test
@@ -143,8 +146,8 @@ keystoreと`key.properties`はcommitしない。Google Play App Signingを有効
 ### BLOCKER
 
 - Android SDK / production upload key / signed AAB
-- iOSのGoogle Sign-Inに対するApp Review Guideline 4.8準拠（通常はSign in with Apple）
-- account deletion（in-app + Google Play Web）
+- Apple Developer / Firebase Console設定、Functions deploy、Sign in with Apple実機検証
+- account deletionのprovider / group role別実機検証（Google Play Web削除申請ページは別途必要）
 - public Privacy Policy URL / Support URL、およびiOSアプリ内のPrivacy Policy導線
 - TestFlight主要flowおよびStore Console提出物の実機・手動確認
 

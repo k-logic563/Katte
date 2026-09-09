@@ -24,10 +24,29 @@ class SettingsPage extends ConsumerWidget {
     ref.listen(authControllerProvider, (previous, next) {
       next.whenOrNull(
         error: (error, stackTrace) {
+          if (error is AccountDeletionBlockedException) {
+            showDialog<void>(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text('アカウントを削除できません'),
+                content: const Text(
+                  'あなたが管理者になっているグループがあります。\n'
+                  'アカウントを削除する前に、対象グループを削除してください。',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('閉じる'),
+                  ),
+                ],
+              ),
+            );
+            return;
+          }
           ScaffoldMessenger.of(context)
             ..hideCurrentSnackBar()
             ..showSnackBar(
-              const SnackBar(content: Text('ログアウトできませんでした。もう一度お試しください。')),
+              const SnackBar(content: Text('処理を完了できませんでした。もう一度お試しください。')),
             );
         },
       );
@@ -147,14 +166,70 @@ class SettingsPage extends ConsumerWidget {
           title: Text('バージョン'),
           trailing: Text('1.0.0'),
         ),
+        const Divider(height: 32),
+        const _SectionTitle('アカウント管理'),
+        ListTile(
+          key: const Key('delete-account-button'),
+          contentPadding: EdgeInsets.zero,
+          enabled: !authAction.isLoading,
+          leading: authAction.isLoading
+              ? const SizedBox.square(
+                  dimension: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Icon(
+                  Icons.delete_forever_outlined,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+          title: Text(
+            authAction.isLoading ? 'アカウントを削除しています…' : 'アカウントを削除',
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+          onTap: authAction.isLoading
+              ? null
+              : () => _confirmAccountDeletion(context, ref),
+        ),
       ],
     );
   }
 }
 
+Future<void> _confirmAccountDeletion(
+  BuildContext context,
+  WidgetRef ref,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('アカウントを削除しますか？'),
+      content: const Text(
+        'この操作を行うと、Katteのアカウント情報が削除されます。\n'
+        'この操作は元に戻せません。',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('キャンセル'),
+        ),
+        FilledButton(
+          key: const Key('confirm-delete-account'),
+          onPressed: () => Navigator.of(context).pop(true),
+          style: FilledButton.styleFrom(
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+          child: const Text('アカウントを削除'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed == true) {
+    await ref.read(authControllerProvider.notifier).deleteAccount();
+  }
+}
+
 String _userName(AuthUser? user) {
   final displayName = user?.displayName?.trim();
-  return displayName == null || displayName.isEmpty ? '名前未設定' : displayName;
+  return displayName == null || displayName.isEmpty ? 'ユーザー' : displayName;
 }
 
 String? _userEmail(AuthUser? user) {

@@ -74,12 +74,20 @@ class FirestoreGroupRepository implements GroupRepository {
     }
 
     final current = snapshot.data();
-    final changed = profile.entries.any(
+    // Apple only returns some profile fields on the first authorization.
+    // Never erase a previously stored value when a later login omits it.
+    final availableProfile = Map<String, Object?>.fromEntries(
+      profile.entries.where((entry) {
+        final value = entry.value;
+        return value != null && (value is! String || value.trim().isNotEmpty);
+      }),
+    );
+    final changed = availableProfile.entries.any(
       (entry) => current?[entry.key] != entry.value,
     );
     if (changed) {
       await reference.update({
-        ...profile,
+        ...availableProfile,
         'updatedAt': FieldValue.serverTimestamp(),
       });
     }

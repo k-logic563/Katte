@@ -7,7 +7,7 @@
 
 ## 1. 取得・保存する情報
 
-- Googleログインにより提供される表示名、メールアドレス、プロフィール画像URL、および
+- GoogleまたはAppleログインにより提供される表示名、メールアドレス、プロフィール画像URL（提供される場合）、および
   Firebase AuthenticationのユーザーID
 - グループ名、招待コード、グループへの所属および権限
 - 商品名、個数、メモ、カテゴリ、追加者、購入状態、購入者、作成・更新日時、購入履歴、
@@ -16,7 +16,8 @@
 - アプリの画面表示や主要操作などの利用状況
 - クラッシュ、エラー、スタックトレースなどの診断情報、および不具合調査用のFirebaseユーザーID
 
-GoogleアカウントのパスワードをKatteが取得または保存することはない。
+GoogleまたはAppleアカウントのパスワードをKatteが取得または保存することはない。Appleで
+「メールを非公開」を選択した場合、AppleのPrivate Relayメールアドレスが保存される場合がある。
 
 ## 2. ユーザーが登録する情報
 
@@ -36,7 +37,7 @@ GoogleアカウントのパスワードをKatteが取得または保存するこ
 
 ## 4. 外部サービス
 
-Google LLCが提供するGoogle Sign-InおよびFirebase（Authentication、Cloud Firestore、
+Google LLCが提供するGoogle Sign-In、Apple Inc.が提供するSign in with Apple、およびFirebase（Authentication、Cloud Firestore、
 Cloud Functions、Cloud Messaging、Analytics、Crashlytics）を利用する。情報はサービス提供に
 必要な範囲で各サービスへ送信され、各提供者の規定に基づいて処理される。
 
@@ -52,8 +53,10 @@ Cloud Functions、Cloud Messaging、Analytics、Crashlytics）を利用する。
 グループを削除すると共有データも削除される。メンバー退出時、共有データは他のメンバーのため
 保持される。
 
-アプリ内アカウント削除は現時点で未実装。アカウントおよび関連データの削除Requestは、
-Supportページの連絡先で受け付ける。共有データは他メンバーへの影響を確認して対応する。
+アプリ内の「設定」からアカウントを削除できる。削除時は認証アカウント、プロフィール、端末・
+通知情報、グループ所属情報を削除する。他のメンバーと共有されている買い物情報、カテゴリ、
+購入履歴は保持する。本人のみが所属する所有グループは共有データごと削除する。他のメンバーが
+いる所有グループは、先にそのグループを削除する必要がある。
 
 ## 7. 安全管理
 

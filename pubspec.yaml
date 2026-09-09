@@ -1,7 +1,7 @@
 name: katte
 description: 家族の「買っといて」をリアルタイムで共有するアプリ
 publish_to: none
-version: 1.0.0+1
+version: 1.0.0+2
 
 environment:
   sdk: ^3.13.1
@@ -22,6 +22,7 @@ dependencies:
   google_fonts: ^8.2.1
   google_sign_in: ^7.2.0
   shared_preferences: ^2.5.5
+  sign_in_with_apple: ^8.1.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -33,6 +34,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/branding/app_icon.png
+    - assets/branding/google_g.png
     - assets/fonts/
 
 flutter_launcher_icons:
