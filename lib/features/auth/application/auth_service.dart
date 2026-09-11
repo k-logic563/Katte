@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -117,12 +119,16 @@ class FirebaseAuthService implements AuthService {
       throw const AuthFlowException('ログイン状態を確認できませんでした。');
     }
 
+    var stage = 'checkAccountDeletion';
     try {
       // Blocked owner accounts are detected before Apple authorization is
       // revoked or a provider reauthentication UI is shown.
+      _logAccountDeletionStage(stage);
       await _functions
           .httpsCallable('checkAccountDeletion')
           .call<Map<String, dynamic>>();
+      stage = 'reauthentication';
+      _logAccountDeletionStage(stage);
       final providerIds = user.providerData
           .map((provider) => provider.providerId)
           .toSet();
@@ -135,6 +141,8 @@ class FirebaseAuthService implements AuthService {
         if (authorizationCode == null || authorizationCode.isEmpty) {
           throw const AuthFlowException('Appleとの認証を完了できませんでした。');
         }
+        stage = 'appleRevoke';
+        _logAccountDeletionStage(stage);
         await _auth.revokeTokenWithAuthorizationCode(authorizationCode);
       } else if (providerIds.contains(
         GoogleAuthProvider.GOOGLE_SIGN_IN_METHOD,
@@ -152,9 +160,13 @@ class FirebaseAuthService implements AuthService {
         throw const AuthFlowException('このアカウントの再認証方法を確認できませんでした。');
       }
 
+      stage = 'deleteAccountCallable';
+      _logAccountDeletionStage(stage);
       await _functions
           .httpsCallable('deleteAccount')
           .call<Map<String, dynamic>>();
+      stage = 'localCleanup';
+      _logAccountDeletionStage(stage);
       await _auth.signOut();
       try {
         await _googleInitialization;
@@ -162,22 +174,29 @@ class FirebaseAuthService implements AuthService {
       } on Object {
         // Firebase Authとserver dataは削除済みなのでGoogle側の失敗は無視する。
       }
-    } on GoogleSignInException catch (error) {
+      _logAccountDeletionStage('navigation');
+    } on GoogleSignInException catch (error, stackTrace) {
+      _logAccountDeletionFailure(stage, error, stackTrace);
       if (error.code == GoogleSignInExceptionCode.canceled ||
           error.code == GoogleSignInExceptionCode.interrupted) {
         throw AuthCancelledException();
       }
       throw const AuthFlowException('アカウントを削除できませんでした。');
-    } on FirebaseFunctionsException catch (error) {
+    } on FirebaseFunctionsException catch (error, stackTrace) {
+      _logAccountDeletionFailure(stage, error, stackTrace);
       if (error.code == 'failed-precondition') {
         throw AccountDeletionBlockedException();
       }
       throw const AuthFlowException('アカウントを削除できませんでした。');
-    } on FirebaseAuthException catch (error) {
+    } on FirebaseAuthException catch (error, stackTrace) {
+      _logAccountDeletionFailure(stage, error, stackTrace);
       if (_isCancellation(error.code)) {
         throw AuthCancelledException();
       }
       throw const AuthFlowException('アカウントを削除できませんでした。');
+    } on Object catch (error, stackTrace) {
+      _logAccountDeletionFailure(stage, error, stackTrace);
+      rethrow;
     }
   }
 
@@ -200,6 +219,34 @@ class FirebaseAuthService implements AuthService {
 
 bool _isCancellation(String code) =>
     code == 'canceled' || code == 'web-context-canceled';
+
+void _logAccountDeletionStage(String stage) {
+  assert(() {
+    developer.log('Account deletion stage started: $stage', name: 'katte.auth');
+    return true;
+  }());
+}
+
+void _logAccountDeletionFailure(
+  String stage,
+  Object error,
+  StackTrace stackTrace,
+) {
+  assert(() {
+    final code = switch (error) {
+      FirebaseFunctionsException(:final code) => code,
+      FirebaseAuthException(:final code) => code,
+      GoogleSignInException(:final code) => code.name,
+      _ => error.runtimeType.toString(),
+    };
+    developer.log(
+      'Account deletion failed at $stage (code: $code)',
+      name: 'katte.auth',
+      stackTrace: stackTrace,
+    );
+    return true;
+  }());
+}
 
 AuthFlowException _friendlyAuthError(FirebaseAuthException error) {
   if (error.code == 'network-request-failed') {

@@ -1575,6 +1575,32 @@ void main() {
     expect(crashReporting.userIdentifiers.last, isNull);
   });
 
+  testWidgets('ログアウト中はLogoutだけ進捗表示しDeleteの文言を維持する', (tester) async {
+    final auth = await _pumpApp(tester, initialUser: testUser);
+    auth.signOutCompleter = Completer<void>();
+    await tester.tap(find.text('設定'));
+    await tester.pumpAndSettle();
+
+    final logoutButton = find.byKey(const Key('logout-button'));
+    await tester.ensureVisible(logoutButton);
+    await tester.tap(logoutButton);
+    await tester.pump();
+
+    expect(find.text('ログアウト中…'), findsOneWidget);
+    expect(find.text('アカウントを削除'), findsOneWidget);
+    expect(find.text('アカウントを削除しています…'), findsNothing);
+    expect(tester.widget<OutlinedButton>(logoutButton).onPressed, isNull);
+    expect(
+      tester
+          .widget<ListTile>(find.byKey(const Key('delete-account-button')))
+          .enabled,
+      isFalse,
+    );
+
+    auth.signOutCompleter!.complete();
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('Settingsから確認後にAccountを削除してLoginへ戻る', (tester) async {
     final notifications = FakeNotificationService();
     final auth = await _pumpApp(
@@ -1602,6 +1628,37 @@ void main() {
     expect(notifications.unregisteredUserIds, [testUser.uid]);
     expect(find.bySemanticsLabel('Googleで続ける'), findsOneWidget);
     expect(find.bySemanticsLabel('Appleでサインイン'), findsOneWidget);
+  });
+
+  testWidgets('Account削除中はDeleteだけ進捗表示しLogoutの文言を維持する', (tester) async {
+    final auth = await _pumpApp(tester, initialUser: testUser);
+    auth.deleteAccountCompleter = Completer<void>();
+    await tester.tap(find.text('設定'));
+    await tester.pumpAndSettle();
+    final deleteButton = find.byKey(const Key('delete-account-button'));
+    await tester.scrollUntilVisible(
+      deleteButton,
+      300,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.tap(deleteButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('confirm-delete-account')));
+    await tester.pump();
+
+    expect(find.text('アカウントを削除しています…'), findsOneWidget);
+    expect(find.text('ログアウト'), findsOneWidget);
+    expect(find.text('ログアウト中…'), findsNothing);
+    expect(
+      tester
+          .widget<OutlinedButton>(find.byKey(const Key('logout-button')))
+          .onPressed,
+      isNull,
+    );
+    expect(tester.widget<ListTile>(deleteButton).enabled, isFalse);
+
+    auth.deleteAccountCompleter!.complete();
+    await tester.pumpAndSettle();
   });
 
   testWidgets('通知タップ時は対象Groupへ切り替えてShoppingへ戻る', (tester) async {
@@ -1929,6 +1986,8 @@ class FakeAuthService implements AuthService {
   int deleteAccountCount = 0;
   Completer<void>? googleSignInCompleter;
   Object? appleSignInError;
+  Completer<void>? signOutCompleter;
+  Completer<void>? deleteAccountCompleter;
 
   @override
   Stream<AuthUser?> authStateChanges() async* {
@@ -1955,11 +2014,15 @@ class FakeAuthService implements AuthService {
   @override
   Future<void> deleteAccount() async {
     deleteAccountCount++;
+    await deleteAccountCompleter?.future;
     _setUser(null);
   }
 
   @override
-  Future<void> signOut() async => _setUser(null);
+  Future<void> signOut() async {
+    await signOutCompleter?.future;
+    _setUser(null);
+  }
 
   void _setUser(AuthUser? user) {
     _currentUser = user;

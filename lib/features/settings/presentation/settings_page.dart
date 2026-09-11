@@ -7,12 +7,23 @@ import '../../auth/application/auth_service.dart';
 import '../../groups/group_providers.dart';
 import '../../groups/presentation/group_setup_page.dart';
 
-class SettingsPage extends ConsumerWidget {
+class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final authAction = ref.watch(authControllerProvider);
+  ConsumerState<SettingsPage> createState() => _SettingsPageState();
+}
+
+enum _AccountAction { idle, loggingOut, deletingAccount }
+
+class _SettingsPageState extends ConsumerState<SettingsPage> {
+  _AccountAction _accountAction = _AccountAction.idle;
+
+  @override
+  Widget build(BuildContext context) {
+    final isLoggingOut = _accountAction == _AccountAction.loggingOut;
+    final isDeletingAccount = _accountAction == _AccountAction.deletingAccount;
+    final isAccountActionRunning = _accountAction != _AccountAction.idle;
     final user = switch (ref.watch(authStateProvider)) {
       AsyncData(:final value) => value,
       _ => null,
@@ -68,11 +79,14 @@ class SettingsPage extends ConsumerWidget {
           width: double.infinity,
           child: OutlinedButton.icon(
             key: const Key('logout-button'),
-            onPressed: authAction.isLoading
-                ? null
-                : ref.read(authControllerProvider.notifier).signOut,
-            icon: const Icon(Icons.logout),
-            label: const Text('ログアウト'),
+            onPressed: isAccountActionRunning ? null : _signOut,
+            icon: isLoggingOut
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.logout),
+            label: Text(isLoggingOut ? 'ログアウト中…' : 'ログアウト'),
           ),
         ),
         const Divider(),
@@ -171,8 +185,8 @@ class SettingsPage extends ConsumerWidget {
         ListTile(
           key: const Key('delete-account-button'),
           contentPadding: EdgeInsets.zero,
-          enabled: !authAction.isLoading,
-          leading: authAction.isLoading
+          enabled: !isAccountActionRunning,
+          leading: isDeletingAccount
               ? const SizedBox.square(
                   dimension: 22,
                   child: CircularProgressIndicator(strokeWidth: 2),
@@ -182,48 +196,62 @@ class SettingsPage extends ConsumerWidget {
                   color: Theme.of(context).colorScheme.error,
                 ),
           title: Text(
-            authAction.isLoading ? 'アカウントを削除しています…' : 'アカウントを削除',
+            isDeletingAccount ? 'アカウントを削除しています…' : 'アカウントを削除',
             style: TextStyle(color: Theme.of(context).colorScheme.error),
           ),
-          onTap: authAction.isLoading
-              ? null
-              : () => _confirmAccountDeletion(context, ref),
+          onTap: isAccountActionRunning ? null : _confirmAccountDeletion,
         ),
       ],
     );
   }
-}
 
-Future<void> _confirmAccountDeletion(
-  BuildContext context,
-  WidgetRef ref,
-) async {
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('アカウントを削除しますか？'),
-      content: const Text(
-        'この操作を行うと、Katteのアカウント情報が削除されます。\n'
-        'この操作は元に戻せません。',
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('キャンセル'),
+  Future<void> _signOut() async {
+    if (_accountAction != _AccountAction.idle) return;
+    setState(() => _accountAction = _AccountAction.loggingOut);
+    try {
+      await ref.read(authControllerProvider.notifier).signOut();
+    } finally {
+      if (mounted) {
+        setState(() => _accountAction = _AccountAction.idle);
+      }
+    }
+  }
+
+  Future<void> _confirmAccountDeletion() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('アカウントを削除しますか？'),
+        content: const Text(
+          'この操作を行うと、Katteのアカウント情報が削除されます。\n'
+          'この操作は元に戻せません。',
         ),
-        FilledButton(
-          key: const Key('confirm-delete-account'),
-          onPressed: () => Navigator.of(context).pop(true),
-          style: FilledButton.styleFrom(
-            backgroundColor: Theme.of(context).colorScheme.error,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('キャンセル'),
           ),
-          child: const Text('アカウントを削除'),
-        ),
-      ],
-    ),
-  );
-  if (confirmed == true) {
-    await ref.read(authControllerProvider.notifier).deleteAccount();
+          FilledButton(
+            key: const Key('confirm-delete-account'),
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('アカウントを削除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || _accountAction != _AccountAction.idle) return;
+
+    setState(() => _accountAction = _AccountAction.deletingAccount);
+    try {
+      await ref.read(authControllerProvider.notifier).deleteAccount();
+    } finally {
+      if (mounted) {
+        setState(() => _accountAction = _AccountAction.idle);
+      }
+    }
   }
 }
 

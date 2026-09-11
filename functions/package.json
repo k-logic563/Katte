@@ -7,7 +7,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "npm run build && node --test lib/notification.test.js"
+    "test": "npm run build && node --test lib/notification.test.js lib/account-deletion.test.js"
   },
   "dependencies": {
     "firebase-admin": "^14.3.0",

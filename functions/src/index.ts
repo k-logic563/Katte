@@ -16,6 +16,7 @@ import {
   isPermanentlyInvalidTokenError,
   selectNotificationTargets,
 } from "./notification";
+import {blocksAccountDeletion} from "./account-deletion";
 
 initializeApp();
 
@@ -191,7 +192,11 @@ export const deleteAccount = onCall(
             .collection("members")
             .limit(2)
             .get();
-          if (members.docs.some((member) => member.id !== userId)) {
+          if (blocksAccountDeletion({
+            userId,
+            role: membership.get("role"),
+            memberIds: members.docs.map((member) => member.id),
+          })) {
             throw new HttpsError(
               "failed-precondition",
               "Delete groups with other members before deleting the account.",
@@ -291,7 +296,11 @@ async function assertAccountDeletionAllowed(
       continue;
     }
     const members = await groupReference.collection("members").limit(2).get();
-    if (members.docs.some((member) => member.id !== userId)) {
+    if (blocksAccountDeletion({
+      userId,
+      role: membership.get("role"),
+      memberIds: members.docs.map((member) => member.id),
+    })) {
       throw new HttpsError(
         "failed-precondition",
         "Delete groups with other members before deleting the account.",
