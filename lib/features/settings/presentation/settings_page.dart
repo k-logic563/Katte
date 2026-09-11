@@ -226,18 +226,30 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           'この操作を行うと、Katteのアカウント情報が削除されます。\n'
           'この操作は元に戻せません。',
         ),
+        actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('キャンセル'),
-          ),
-          FilledButton(
-            key: const Key('confirm-delete-account'),
-            onPressed: () => Navigator.of(context).pop(true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
+          SizedBox(
+            width: double.infinity,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                FilledButton(
+                  key: const Key('confirm-delete-account'),
+                  onPressed: () => Navigator.of(context).pop(true),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.error,
+                    foregroundColor: Theme.of(context).colorScheme.onError,
+                  ),
+                  child: const Text('アカウントを削除'),
+                ),
+                const SizedBox(height: 8),
+                TextButton(
+                  key: const Key('cancel-delete-account'),
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('キャンセル'),
+                ),
+              ],
             ),
-            child: const Text('アカウントを削除'),
           ),
         ],
       ),

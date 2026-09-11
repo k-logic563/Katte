@@ -9,6 +9,7 @@ environment:
 dependencies:
   cloud_firestore: ^6.9.0
   cloud_functions: ^6.4.0
+  crypto: ^3.0.7
   firebase_analytics: ^12.5.0
   firebase_auth: ^6.6.0
   firebase_core: ^4.14.0

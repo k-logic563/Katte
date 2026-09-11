@@ -1621,13 +1621,72 @@ void main() {
 
     expect(find.text('アカウントを削除しますか？'), findsOneWidget);
     expect(find.textContaining('この操作は元に戻せません。'), findsOneWidget);
-    await tester.tap(find.byKey(const Key('confirm-delete-account')));
+    final confirmDelete = find.byKey(const Key('confirm-delete-account'));
+    final cancelDelete = find.byKey(const Key('cancel-delete-account'));
+    expect(
+      tester.getTopLeft(confirmDelete).dy,
+      lessThan(tester.getTopLeft(cancelDelete).dy),
+    );
+    expect(tester.getSemantics(confirmDelete).label, 'アカウントを削除');
+    expect(tester.getSemantics(cancelDelete).label, 'キャンセル');
+    final destructiveButton = tester.widget<FilledButton>(confirmDelete);
+    final dialogContext = tester.element(find.byType(AlertDialog));
+    expect(
+      destructiveButton.style?.backgroundColor?.resolve(<WidgetState>{}),
+      Theme.of(dialogContext).colorScheme.error,
+    );
+    await tester.tap(confirmDelete);
     await tester.pumpAndSettle();
 
     expect(auth.deleteAccountCount, 1);
-    expect(notifications.unregisteredUserIds, [testUser.uid]);
+    expect(notifications.accountDeletionCleanupCount, 1);
+    expect(notifications.unregisteredUserIds, isEmpty);
     expect(find.bySemanticsLabel('Googleで続ける'), findsOneWidget);
     expect(find.bySemanticsLabel('Appleでサインイン'), findsOneWidget);
+  });
+
+  testWidgets('Account削除Dialogのキャンセルで処理を開始せず閉じる', (tester) async {
+    final auth = await _pumpApp(tester, initialUser: testUser);
+    await tester.tap(find.text('設定'));
+    await tester.pumpAndSettle();
+    final deleteButton = find.byKey(const Key('delete-account-button'));
+    await tester.scrollUntilVisible(
+      deleteButton,
+      300,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.tap(deleteButton);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('cancel-delete-account')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(auth.deleteAccountCount, 0);
+  });
+
+  testWidgets('小さいiPhoneでもAccount削除Dialogが縦順序で崩れない', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(320, 568));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pumpApp(tester, initialUser: testUser);
+    await tester.tap(find.text('設定'));
+    await tester.pumpAndSettle();
+    final deleteButton = find.byKey(const Key('delete-account-button'));
+    await tester.scrollUntilVisible(
+      deleteButton,
+      300,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.tap(deleteButton);
+    await tester.pumpAndSettle();
+
+    final confirmDelete = find.byKey(const Key('confirm-delete-account'));
+    final cancelDelete = find.byKey(const Key('cancel-delete-account'));
+    expect(
+      tester.getTopLeft(confirmDelete).dy,
+      lessThan(tester.getTopLeft(cancelDelete).dy),
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('Account削除中はDeleteだけ進捗表示しLogoutの文言を維持する', (tester) async {
@@ -2053,6 +2112,7 @@ class FakeNotificationService implements NotificationService {
   final _tapController = StreamController<NotificationTap>.broadcast();
   final List<String> registeredUserIds = [];
   final List<String> unregisteredUserIds = [];
+  int accountDeletionCleanupCount = 0;
 
   @override
   Stream<NotificationTap> get notificationTaps => _tapController.stream;
@@ -2065,6 +2125,11 @@ class FakeNotificationService implements NotificationService {
   @override
   Future<void> unregisterForUser(AuthUser user) async {
     unregisteredUserIds.add(user.uid);
+  }
+
+  @override
+  Future<void> clearAfterAccountDeletion() async {
+    accountDeletionCleanupCount++;
   }
 
   void emitTap({String? groupId}) {

@@ -46,7 +46,7 @@ class AuthController extends Notifier<AsyncValue<void>> {
     state = const AsyncLoading();
     try {
       await ref.read(authServiceProvider).deleteAccount();
-      await ref.read(notificationServiceProvider).unregisterForUser(user);
+      await ref.read(notificationServiceProvider).clearAfterAccountDeletion();
       state = const AsyncData(null);
       return true;
     } on AuthCancelledException {

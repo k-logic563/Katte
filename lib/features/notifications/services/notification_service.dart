@@ -33,6 +33,8 @@ abstract interface class NotificationService {
 
   Future<void> unregisterForUser(AuthUser user);
 
+  Future<void> clearAfterAccountDeletion();
+
   void dispose();
 }
 
@@ -288,6 +290,23 @@ class FirebaseNotificationService implements NotificationService {
     } on Object catch (error, stackTrace) {
       debugPrint('Device registration deletion failed: $error\n$stackTrace');
     }
+    try {
+      await _messaging.deleteToken();
+    } on Object catch (error, stackTrace) {
+      debugPrint('FCM token deletion failed: $error\n$stackTrace');
+    }
+
+    _currentUserId = null;
+    _deviceId = null;
+  }
+
+  @override
+  Future<void> clearAfterAccountDeletion() async {
+    await _tokenRefreshSubscription?.cancel();
+    _tokenRefreshSubscription = null;
+
+    // deleteAccount Cloud Function recursively deletes users/{uid}, including
+    // devices. Only device-local notification state remains at this point.
     try {
       await _messaging.deleteToken();
     } on Object catch (error, stackTrace) {
